@@ -2722,7 +2722,8 @@ let rec is_nonexpansive exp =
   | Texp_unreachable
   | Texp_function _
   | Texp_probe_is_enabled _
-  | Texp_array [] -> true
+  | Texp_array []
+  | Texp_immutable_array [] -> true
   | Texp_let(_rec_flag, pat_exp_list, body) ->
       List.for_all (fun vb -> is_nonexpansive vb.vb_expr) pat_exp_list &&
       is_nonexpansive body
@@ -2802,6 +2803,7 @@ let rec is_nonexpansive exp =
       [Nolabel, Arg e], _) ->
      is_nonexpansive e
   | Texp_array (_ :: _)
+  | Texp_immutable_array (_ :: _)
   | Texp_apply _
   | Texp_try _
   | Texp_setfield _
@@ -2890,6 +2892,13 @@ let is_local_returning_expr e =
         raise(Error(loc2, Env.empty, Local_return_annotation_mismatch loc1))
   in
   let rec loop e =
+    match Extensions.extension_expr_of_expr e with
+    | Some eexp -> begin
+        match eexp with
+        | Eexp_comprehension   _ -> false, e.pexp_loc
+        | Eexp_immutable_array _ -> false, e.pexp_loc
+      end
+    | None      ->
     match e.pexp_desc with
     | Pexp_apply
         ({ pexp_desc = Pexp_extension({txt = "extension.local"}, PStr []) },
@@ -3034,7 +3043,8 @@ let rec type_approx env sexp =
   | _ -> newvar ()
 
 and type_approx_extension : Extensions.extension_expr -> _ = function
-  | _ -> newvar ()
+  | Eexp_comprehension _ -> newvar ()
+  | Eexp_immutable_array _ -> newvar ()
 
 (* Check that all univars are safe in a type. Both exp.exp_type and
    ty_expected should already be generalized. *)
@@ -3107,7 +3117,8 @@ let check_partial_application statement exp =
             match exp_desc with
             | Texp_ident _ | Texp_constant _ | Texp_tuple _
             | Texp_construct _ | Texp_variant _ | Texp_record _
-            | Texp_field _ | Texp_setfield _ | Texp_array _
+            | Texp_field _ | Texp_setfield _
+            | Texp_array _ | Texp_immutable_array _
             | Texp_list_comprehension _ | Texp_array_comprehension _
             | Texp_while _ | Texp_for _ | Texp_instvar _
             | Texp_setinstvar _ | Texp_override _ | Texp_assert _
@@ -3369,7 +3380,8 @@ and type_expect_
   (* CR aspectorzabusky: How's this indentation? *)
   match Extensions.extension_expr_of_expr sexp with
   | Some eexp ->
-      type_expect_extension ~loc ~env ~expected_mode ~ty_expected eexp
+      type_expect_extension
+        ~loc ~env ~expected_mode ~ty_expected ~explanation eexp
   | None      -> match sexp.pexp_desc with
   | Pexp_ident lid ->
       let path, mode, desc, kind = type_ident env ~recarg lid in
@@ -3924,24 +3936,16 @@ and type_expect_
         exp_attributes = sexp.pexp_attributes;
         exp_env = env }
   | Pexp_array(sargl) ->
-      register_allocation expected_mode;
-      let ty = newgenvar() in
-      let to_unify = Predef.type_array ty in
-      with_explanation (fun () ->
-        unify_exp_types loc env to_unify (generic_instance ty_expected));
-      let argument_mode = mode_subcomponent expected_mode in
-      let argl =
-        List.map
-          (fun sarg -> type_expect env argument_mode sarg (mk_expected ty))
-          sargl
-      in
-      re {
-        exp_desc = Texp_array argl;
-        exp_loc = loc; exp_extra = [];
-        exp_type = instance ty_expected;
-        exp_mode = expected_mode.mode;
-        exp_attributes = sexp.pexp_attributes;
-        exp_env = env }
+      type_generic_array
+        ~loc
+        ~env
+        ~expected_mode
+        ~ty_expected
+        ~explanation
+        ~type_:Predef.type_array
+        ~texp:(fun elts -> Texp_array elts)
+        ~attributes:sexp.pexp_attributes
+        sargl
   | Pexp_ifthenelse(scond, sifso, sifnot) ->
       let cond =
         type_expect env (mode_var ()) scond
@@ -4039,7 +4043,7 @@ and type_expect_
         exp_attributes = sexp.pexp_attributes;
         exp_env = env }
   | Pexp_constraint (sarg, sty) ->
-      (* Pretend separate = true, 1% slowdown for lablgtk *)
+     (* Pretend separate = true, 1% slowdown for lablgtk *)
       begin_def ();
       let type_mode =
         if has_local_attr_exp sexp then Alloc_mode.Local
@@ -6231,12 +6235,47 @@ and type_andops env sarg sands expected_ty =
   let let_arg, rev_ands = loop env sarg (List.rev sands) expected_ty in
   let_arg, List.rev rev_ands
 
-and type_expect_extension ~loc ~env ~ty_expected
+and type_generic_array
+      ~loc
+      ~env
+      ~(expected_mode : expected_mode)
+      ~ty_expected
+      ~explanation
+      ~type_
+      ~texp
+      ~attributes
+      sargl
+  =
+  register_allocation expected_mode;
+  let ty = newgenvar() in
+  let to_unify = type_ ty in
+  with_explanation explanation (fun () ->
+    unify_exp_types loc env to_unify (generic_instance ty_expected));
+  let argument_mode = mode_subcomponent expected_mode in
+  let argl =
+    List.map
+      (fun sarg -> type_expect env argument_mode sarg (mk_expected ty))
+      sargl
+  in
+  re {
+    exp_desc = texp argl;
+    exp_loc = loc; exp_extra = [];
+    exp_type = instance ty_expected;
+    exp_mode = expected_mode.mode;
+    exp_attributes = attributes;
+    exp_env = env }
+
+and type_expect_extension ~loc ~env ~expected_mode ~ty_expected ~explanation
   : Extensions.extension_expr -> _ = function
   | Eexp_comprehension cexpr ->
-      type_comprehension_expr ~loc ~env ~ty_expected cexpr
+      type_comprehension_expr
+        ~loc ~env ~expected_mode ~ty_expected ~explanation cexpr
+  | Eexp_immutable_array iaexpr ->
+      type_immutable_array
+        ~loc ~env ~expected_mode ~ty_expected ~explanation iaexpr
 
-and type_comprehension_expr ~loc ~env ~expected_mode:_ ~ty_expected cexpr =
+and type_comprehension_expr
+      ~loc ~env ~expected_mode:_ ~ty_expected ~explanation:_ cexpr =
   let open Extensions.Comprehensions in
   (* CR aspectorzabusky: The first three things here are a bunch of pieces of
      linked data that always vary together, but we need the different pieces.
@@ -6509,6 +6548,20 @@ and type_comprehension_iterator
       let pvs = !pattern_variables in
       pattern_variables := [];
       Texp_comp_in { pattern; sequence }, pvs
+
+and type_immutable_array ~loc ~env ~expected_mode ~ty_expected ~explanation
+    : Extensions.Immutable_arrays.expression -> _ = function
+  | Iaexp_immutable_array elts -> 
+      type_generic_array
+        ~loc
+        ~env
+        ~expected_mode
+        ~ty_expected
+        ~explanation
+        ~type_:Predef.type_immutable_array
+        ~texp:(fun elts -> Texp_immutable_array elts)
+        ~attributes:[] (* CR aspectorzabusky: This can't be right *)
+        elts
 
 (* Typing of toplevel bindings *)
 

@@ -376,9 +376,9 @@ let set_dumped_pass s enabled =
   end
 
 module Extension = struct
-  type t = Comprehensions | Local | Include_functor
+  type t = Comprehensions | Local | Include_functor | Immutable_arrays
 
-  let all = [ Comprehensions; Local; Include_functor ]
+  let all = [ Comprehensions; Local; Include_functor; Immutable_arrays ]
   let default_extensions = [ Local; Include_functor ]
 
   let extensions = ref ([] : t list)   (* -extension *)
@@ -388,11 +388,13 @@ module Extension = struct
     | Comprehensions -> "comprehensions"
     | Local -> "local"
     | Include_functor -> "include_functor"
+    | Immutable_arrays -> "immutable_arrays"
 
   let of_string = function
     | "comprehensions" -> Some Comprehensions
     | "local" -> Some Local
     | "include_functor" -> Some Include_functor
+    | "immutable_arrays" -> Some Immutable_arrays
     | _ -> None
 
   let disable_all_extensions = ref false             (* -disable-all-extensions *)
