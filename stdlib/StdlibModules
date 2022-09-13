@@ -37,7 +37,8 @@ endef
 STDLIB_MODS=\
   camlinternalFormatBasics camlinternalAtomic \
   stdlib pervasives seq option either result bool char uchar \
-  sys list bytes string unit marshal obj array float int int32 int64 nativeint \
+  sys list bytes string unit marshal obj array iarray \
+  float int int32 int64 nativeint \
   lexing parsing set map stack queue camlinternalLazy lazy stream buffer \
   camlinternalFormat printf arg atomic \
   printexc fun gc digest random hashtbl weak \
