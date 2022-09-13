@@ -344,8 +344,8 @@ let array_function ~loc str name =
 
 let array_get_fun ~loc =
   ghexp ~loc (Pexp_ident(array_function ~loc "Array" "get"))
-let immutable_array_get_fun ~loc =
-  ghexp ~loc (Pexp_ident(array_function ~loc "Immutable_array" "get"))
+let iarray_get_fun ~loc =
+  ghexp ~loc (Pexp_ident(array_function ~loc "Iarray" "get"))
 let string_get_fun ~loc =
   ghexp ~loc (Pexp_ident(array_function ~loc "String" "get"))
 
@@ -367,7 +367,7 @@ let index_set ~loc set_fun array index value =
    mkexp ~loc (Pexp_apply(set_fun, args))
 
 let array_get ~loc = index_get ~loc (array_get_fun ~loc)
-let immutable_array_get ~loc = index_get ~loc (immutable_array_get_fun ~loc)
+let iarray_get ~loc = index_get ~loc (iarray_get_fun ~loc)
 let string_get ~loc = index_get ~loc (string_get_fun ~loc)
 let dotop_get ~loc path (left,right) ext array index =
   let multi, index = multi_indices ~loc index in
@@ -2376,7 +2376,7 @@ simple_expr:
   | simple_expr DOT LPAREN seq_expr error
       { unclosed "(" $loc($3) ")" $loc($5) }
   | simple_expr DOT HASH LPAREN seq_expr RPAREN
-      { immutable_array_get ~loc:$sloc $1 $5 }
+      { iarray_get ~loc:$sloc $1 $5 }
   | simple_expr DOT HASH LPAREN seq_expr error
       { unclosed "(" $loc($3) ")" $loc($5) }
   | simple_expr DOT LBRACKET seq_expr RBRACKET
