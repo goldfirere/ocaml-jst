@@ -537,6 +537,7 @@ rule token = parse
   | "="  { EQUAL }
   | "["  { LBRACKET }
   | "[|" { LBRACKETBAR }
+  | "[:" { LBRACKETCOLON }
   | "[<" { LBRACKETLESS }
   | "[>" { LBRACKETGREATER }
   | "]"  { RBRACKET }
@@ -545,6 +546,7 @@ rule token = parse
   | "|"  { BAR }
   | "||" { BARBAR }
   | "|]" { BARRBRACKET }
+  | ":]" { COLONRBRACKET }
   | ">"  { GREATER }
   | ">]" { GREATERRBRACKET }
   | "}"  { RBRACE }
