@@ -598,6 +598,7 @@ module Gc           = Gc
 module Genlex       = Genlex
 module Hashtbl      = Hashtbl
 module Iarray       = Iarray
+module IarrayLabels = IarrayLabels
 module Int          = Int
 module Int32        = Int32
 module Int64        = Int64
