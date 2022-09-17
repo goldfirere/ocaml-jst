@@ -39511,7 +39511,7 @@ module Tables = struct
       ( Generic_array.expression
           "[:" ":]"
           (fun elts ->
-            (Extensions.expr_of_extension_expr
+            (Extensions.Expression.ast_of
                ~loc:(make_loc _sloc)
                Immutable_arrays
                (Eexp_immutable_array (Iaexp_immutable_array elts))).pexp_desc)
@@ -39593,7 +39593,7 @@ module Tables = struct
       ( Generic_array.expression
           "[:" ":]"
           (fun elts ->
-            (Extensions.expr_of_extension_expr
+            (Extensions.Expression.ast_of
                ~loc:(make_loc _sloc)
                Immutable_arrays
                (Eexp_immutable_array (Iaexp_immutable_array elts))).pexp_desc)
@@ -39659,7 +39659,7 @@ module Tables = struct
       ( Generic_array.expression
           "[:" ":]"
           (fun elts ->
-            (Extensions.expr_of_extension_expr
+            (Extensions.Expression.ast_of
                ~loc:(make_loc _sloc)
                Immutable_arrays
                (Eexp_immutable_array (Iaexp_immutable_array elts))).pexp_desc)
@@ -39774,7 +39774,7 @@ module Tables = struct
       ( Generic_array.expression
           "[:" ":]"
           (fun elts ->
-            (Extensions.expr_of_extension_expr
+            (Extensions.Expression.ast_of
                ~loc:(make_loc _sloc)
                Immutable_arrays
                (Eexp_immutable_array (Iaexp_immutable_array elts))).pexp_desc)
@@ -39878,7 +39878,7 @@ module Tables = struct
       ( Generic_array.expression
           "[:" ":]"
           (fun elts ->
-            (Extensions.expr_of_extension_expr
+            (Extensions.Expression.ast_of
                ~loc:(make_loc _sloc)
                Immutable_arrays
                (Eexp_immutable_array (Iaexp_immutable_array elts))).pexp_desc)
@@ -39974,7 +39974,7 @@ module Tables = struct
       ( Generic_array.expression
           "[:" ":]"
           (fun elts ->
-            (Extensions.expr_of_extension_expr
+            (Extensions.Expression.ast_of
                ~loc:(make_loc _sloc)
                Immutable_arrays
                (Eexp_immutable_array (Iaexp_immutable_array elts))).pexp_desc)
@@ -40200,7 +40200,7 @@ module Tables = struct
               let _sloc = (_symbolstartpos, _endpos) in
               
 # 2472 "parsing/parser.mly"
-    ( (Extensions.expr_of_extension_expr
+    ( (Extensions.Expression.ast_of
          ~loc:(make_loc _sloc)
          Comprehensions
          (Eexp_comprehension _1)).pexp_desc )
@@ -40304,7 +40304,7 @@ module Tables = struct
               let _sloc = (_symbolstartpos, _endpos) in
               
 # 2472 "parsing/parser.mly"
-    ( (Extensions.expr_of_extension_expr
+    ( (Extensions.Expression.ast_of
          ~loc:(make_loc _sloc)
          Comprehensions
          (Eexp_comprehension _1)).pexp_desc )
@@ -40423,7 +40423,7 @@ module Tables = struct
               let _sloc = (_symbolstartpos, _endpos) in
               
 # 2472 "parsing/parser.mly"
-    ( (Extensions.expr_of_extension_expr
+    ( (Extensions.Expression.ast_of
          ~loc:(make_loc _sloc)
          Comprehensions
          (Eexp_comprehension _1)).pexp_desc )
@@ -40564,7 +40564,7 @@ module Tables = struct
               let _sloc = (_symbolstartpos, _endpos) in
               
 # 2472 "parsing/parser.mly"
-    ( (Extensions.expr_of_extension_expr
+    ( (Extensions.Expression.ast_of
          ~loc:(make_loc _sloc)
          Comprehensions
          (Eexp_comprehension _1)).pexp_desc )

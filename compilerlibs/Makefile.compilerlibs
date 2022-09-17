@@ -37,7 +37,7 @@ UTILS_CMI=
 PARSING=parsing/location.cmo parsing/longident.cmo \
   parsing/docstrings.cmo parsing/syntaxerr.cmo \
   parsing/ast_helper.cmo \
-  parsing/extensions.cmo \
+  parsing/extensions_parsing.cmo parsing/extensions.cmo \
   parsing/pprintast.cmo \
   parsing/camlinternalMenhirLib.cmo parsing/parser.cmo \
   parsing/lexer.cmo parsing/parse.cmo parsing/printast.cmo \

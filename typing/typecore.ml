@@ -2892,7 +2892,7 @@ let is_local_returning_expr e =
         raise(Error(loc2, Env.empty, Local_return_annotation_mismatch loc1))
   in
   let rec loop e =
-    match Extensions.extension_expr_of_expr e with
+    match Extensions.Expression.of_ast e with
     | Some eexp -> begin
         match eexp with
         | Eexp_comprehension   _ -> false, e.pexp_loc
@@ -2991,7 +2991,7 @@ let rec approx_type env sty =
 
 
 let rec type_approx env sexp =
-  match Extensions.extension_expr_of_expr sexp with
+  match Extensions.Expression.of_ast sexp with
   | Some eexp -> type_approx_extension eexp
   | None      -> match sexp.pexp_desc with
     Pexp_let (_, _, e) -> type_approx env e
@@ -3042,7 +3042,7 @@ let rec type_approx env sexp =
     type_approx env e
   | _ -> newvar ()
 
-and type_approx_extension : Extensions.extension_expr -> _ = function
+and type_approx_extension : Extensions.Expression.t -> _ = function
   | Eexp_comprehension _ -> newvar ()
   | Eexp_immutable_array _ -> newvar ()
 
@@ -3315,7 +3315,7 @@ let unify_exp env exp expected_ty =
    the "expected type" provided by the context. *)
 
 let rec is_inferred sexp =
-  match Extensions.extension_expr_of_expr sexp with
+  match Extensions.Expression.of_ast sexp with
   | Some eexp -> is_inferred_extension eexp
   | None      -> match sexp.pexp_desc with
   | Pexp_ident _ | Pexp_apply _ | Pexp_field _ | Pexp_constraint _
@@ -3323,7 +3323,7 @@ let rec is_inferred sexp =
   | Pexp_sequence (_, e) | Pexp_open (_, e) -> is_inferred e
   | Pexp_ifthenelse (_, e1, Some e2) -> is_inferred e1 && is_inferred e2
   | _ -> false
-and is_inferred_extension : Extensions.extension_expr -> _ = function
+and is_inferred_extension : Extensions.Expression.t -> _ = function
   | _ -> false
 
 let rec type_exp ?recarg env expected_mode sexp =
@@ -3378,7 +3378,7 @@ and type_expect_
     exp
   in
   (* CR aspectorzabusky: How's this indentation? *)
-  match Extensions.extension_expr_of_expr sexp with
+  match Extensions.Expression.of_ast sexp with
   | Some eexp ->
       type_expect_extension
         ~loc ~env ~expected_mode ~ty_expected ~explanation eexp
@@ -5890,7 +5890,7 @@ and type_let
         false
   in
   let rec sexp_is_fun sexp =
-    match Extensions.extension_expr_of_expr sexp with
+    match Extensions.Expression.of_ast sexp with
     | Some eexp -> eexp_is_fun eexp
     | None      -> match sexp.pexp_desc with
     | Pexp_fun _ | Pexp_function _ -> true
@@ -5900,7 +5900,7 @@ and type_let
       ({ pexp_desc = Pexp_extension({txt = "extension.local"}, PStr []) },
        [Nolabel, e]) -> sexp_is_fun e
     | _ -> false
-  and eexp_is_fun : Extensions.extension_expr -> _ = function
+  and eexp_is_fun : Extensions.Expression.t -> _ = function
     | _ -> false
   in
   let vb_is_fun { pvb_expr = sexp; _ } = sexp_is_fun sexp in
@@ -6266,7 +6266,7 @@ and type_generic_array
     exp_env = env }
 
 and type_expect_extension ~loc ~env ~expected_mode ~ty_expected ~explanation
-  : Extensions.extension_expr -> _ = function
+  : Extensions.Expression.t -> _ = function
   | Eexp_comprehension cexpr ->
       type_comprehension_expr
         ~loc ~env ~expected_mode ~ty_expected ~explanation cexpr
