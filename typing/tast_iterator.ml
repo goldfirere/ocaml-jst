@@ -167,7 +167,7 @@ let pat
   | Tpat_construct (_, _, l) -> List.iter (sub.pat sub) l
   | Tpat_variant (_, po, _) -> Option.iter (sub.pat sub) po
   | Tpat_record (l, _) -> List.iter (fun (_, _, i) -> sub.pat sub i) l
-  | Tpat_array l -> List.iter (sub.pat sub) l
+  | Tpat_array (_, l) -> List.iter (sub.pat sub) l
   | Tpat_alias (p, _, _) -> sub.pat sub p
   | Tpat_lazy p -> sub.pat sub p
   | Tpat_value p -> sub.pat sub (p :> pattern)

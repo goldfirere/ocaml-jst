@@ -815,7 +815,8 @@ and build_as_type_aux env p =
       in
       p.pat_type, mode
   | Tpat_any | Tpat_var _
-  | Tpat_array _ | Tpat_lazy _ -> p.pat_type, p.pat_mode
+  | Tpat_array _ | Tpat_lazy _ ->
+      p.pat_type, p.pat_mode
 
 let build_or_pat env loc mode lid =
   let path, decl = Env.lookup_type ~loc:lid.loc lid.txt env in
@@ -1374,7 +1375,10 @@ type 'case_pattern half_typed_case =
     unpacks: module_variable list;
     contains_gadt: bool; }
 
-let rec has_literal_pattern p = match p.ppat_desc with
+let rec has_literal_pattern p =
+  match Extensions.Pattern.of_ast p with
+  | Some epat -> has_literal_pattern_extension epat
+  | None      -> match p.ppat_desc with
   | Ppat_constant _
   | Ppat_interval _ ->
      true
@@ -1401,6 +1405,9 @@ let rec has_literal_pattern p = match p.ppat_desc with
      List.exists (fun (_,p) -> has_literal_pattern p) ps
   | Ppat_or (p, q) ->
      has_literal_pattern p || has_literal_pattern q
+and has_literal_pattern_extension : Extensions.Pattern.t -> _ = function
+  | Epat_immutable_array (Iapat_immutable_array ps) ->
+     List.exists has_literal_pattern ps
 
 let check_scope_escape loc env level ty =
   try Ctype.check_scope_escape env level ty
@@ -1683,6 +1690,32 @@ and type_pat_aux
     | Some Backtrack_or -> false
     | Some (Refine_or {inside_nonsplit_or}) -> inside_nonsplit_or
   in
+  let type_pat_array type_some_array mutability spl =
+    (* Inline this again when we upstream this *)
+    let ty_elt = newgenvar() in
+    let expected_ty = generic_instance expected_ty in
+    unify_pat_types ~refine
+      loc env (type_some_array ty_elt) expected_ty;
+    map_fold_cont (fun p -> type_pat Value p ty_elt) spl (fun pl ->
+      rvp k {
+      pat_desc = Tpat_array (mutability, pl);
+      pat_loc = loc; pat_extra=[];
+      pat_type = instance expected_ty;
+      pat_mode = alloc_mode.mode;
+      pat_attributes = sp.ppat_attributes;
+      pat_env = !env })
+  in
+  match Extensions.Pattern.of_ast sp with
+  | Some epat -> begin
+      (* Normally this would go to an auxiliary function, but this function
+         takes so many parameters, has such a complex type, and uses so many
+         local definitions, it seems better to just put the pattern matching
+         here.  This shouldn't fuck up the diff *too* much. *)
+      match epat with
+      | Epat_immutable_array (Iapat_immutable_array spl) ->
+          type_pat_array Predef.type_iarray Immutable spl
+    end
+  | None ->
   match sp.ppat_desc with
     Ppat_any ->
       let k' d = rvp k {
@@ -2071,18 +2104,7 @@ and type_pat_aux
             lid_sp_list (fun lbl_pat_list -> k' (make_record_pat lbl_pat_list))
       end
   | Ppat_array spl ->
-      let ty_elt = newgenvar() in
-      let expected_ty = generic_instance expected_ty in
-      unify_pat_types ~refine
-        loc env (Predef.type_array ty_elt) expected_ty;
-      map_fold_cont (fun p -> type_pat Value p ty_elt) spl (fun pl ->
-        rvp k {
-        pat_desc = Tpat_array pl;
-        pat_loc = loc; pat_extra=[];
-        pat_type = instance expected_ty;
-        pat_mode = alloc_mode.mode;
-        pat_attributes = sp.ppat_attributes;
-        pat_env = !env })
+      type_pat_array Predef.type_array Mutable spl
   | Ppat_or(sp1, sp2) ->
       let may_split, must_split =
         match get_splitting_mode mode with
@@ -2422,6 +2444,9 @@ let combine_pat_tuple_arity a b =
       else Not_local_tuple
 
 let rec pat_tuple_arity spat =
+  match Extensions.Pattern.of_ast spat with
+  | Some epat -> pat_tuple_arity_extension epat
+  | None      ->
   match spat.ppat_desc with
   | Ppat_tuple args -> Local_tuple (List.length args)
   | Ppat_any | Ppat_exception _ | Ppat_var _ -> Maybe_local_tuple
@@ -2432,6 +2457,8 @@ let rec pat_tuple_arity spat =
   | Ppat_or(sp1, sp2) ->
       combine_pat_tuple_arity (pat_tuple_arity sp1) (pat_tuple_arity sp2)
   | Ppat_constraint(p, _) | Ppat_open(_, p) | Ppat_alias(p, _) -> pat_tuple_arity p
+and pat_tuple_arity_extension : Extensions.Pattern.t -> _ = function
+  | Epat_immutable_array (Iapat_immutable_array _) -> Not_local_tuple
 
 let rec cases_tuple_arity cases =
   match cases with
@@ -3201,7 +3228,13 @@ let contains_variant_either ty =
   try loop ty; unmark_type ty; false
   with Exit -> unmark_type ty; true
 
+let shallow_iter_ppat_extension f : Extensions.Pattern.t -> _ = function
+  | Epat_immutable_array (Iapat_immutable_array pats) -> List.iter f pats
+
 let shallow_iter_ppat f p =
+  match Extensions.Pattern.of_ast p with
+  | Some epat -> shallow_iter_ppat_extension f epat
+  | None      ->
   match p.ppat_desc with
   | Ppat_any | Ppat_var _ | Ppat_constant _ | Ppat_interval _
   | Ppat_extension _
