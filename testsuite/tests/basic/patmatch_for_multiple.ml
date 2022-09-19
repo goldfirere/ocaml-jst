@@ -12,16 +12,16 @@ match (3, 2, 1) with
 ;;
 [%%expect{|
 (let
-  (*match*/268 = 3
-   *match*/269 = 2
-   *match*/270 = 1
-   *match*/271 = *match*/268
-   *match*/272 = *match*/269
-   *match*/273 = *match*/270)
+  (*match*/270 = 3
+   *match*/271 = 2
+   *match*/272 = 1
+   *match*/273 = *match*/270
+   *match*/274 = *match*/271
+   *match*/275 = *match*/272)
   (catch
     (catch
-      (catch (if (!= *match*/272 3) (exit 3) (exit 1)) with (3)
-        (if (!= *match*/271 1) (exit 2) (exit 1)))
+      (catch (if (!= *match*/274 3) (exit 3) (exit 1)) with (3)
+        (if (!= *match*/273 1) (exit 2) (exit 1)))
      with (2) 0)
    with (1) 1))
 - : bool = false
@@ -36,26 +36,26 @@ match (3, 2, 1) with
 ;;
 [%%expect{|
 (let
-  (*match*/276 = 3
-   *match*/277 = 2
-   *match*/278 = 1
-   *match*/279 = (makeblock 0 *match*/276 *match*/277 *match*/278))
+  (*match*/278 = 3
+   *match*/279 = 2
+   *match*/280 = 1
+   *match*/281 = (makeblock 0 *match*/278 *match*/279 *match*/280))
   (catch
     (catch
-      (let (*match*/280 =a (field 0 *match*/279))
+      (let (*match*/282 =a (field 0 *match*/281))
         (catch
-          (let (*match*/281 =a (field 1 *match*/279))
-            (if (!= *match*/281 3) (exit 7)
-              (let (*match*/282 =a (field 2 *match*/279))
-                (exit 5 *match*/279))))
+          (let (*match*/283 =a (field 1 *match*/281))
+            (if (!= *match*/283 3) (exit 7)
+              (let (*match*/284 =a (field 2 *match*/281))
+                (exit 5 *match*/281))))
          with (7)
-          (if (!= *match*/280 1) (exit 6)
+          (if (!= *match*/282 1) (exit 6)
             (let
-              (*match*/284 =a (field 2 *match*/279)
-               *match*/283 =a (field 1 *match*/279))
-              (exit 5 *match*/279)))))
+              (*match*/286 =a (field 2 *match*/281)
+               *match*/285 =a (field 1 *match*/281))
+              (exit 5 *match*/281)))))
      with (6) 0)
-   with (5 x/274[(consts ()) (non_consts ([0: [int], [int], [int]]))])
-    (seq (ignore x/274) 1)))
+   with (5 x/276[(consts ()) (non_consts ([0: [int], [int], [int]]))])
+    (seq (ignore x/276) 1)))
 - : bool = false
 |}];;
