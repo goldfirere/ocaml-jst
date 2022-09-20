@@ -1743,11 +1743,17 @@ and extension_expr ctxt f (x : Extensions.Expression.t) =
   | Eexp_immutable_array iaexp -> immutable_array_expr ctxt f iaexp
 
 and comprehension_expr ctxt f (x : Extensions.Comprehensions.comprehension_expr) =
-  match x with
-  | Cexp_list_comprehension  comp ->
-      comprehension ctxt f ~open_:"[" ~close:"]" comp
-  | Cexp_array_comprehension comp ->
-      comprehension ctxt f ~open_:"[|" ~close:"|]" comp
+  let punct, comp = match x with
+    | Cexp_list_comprehension  comp ->
+        "", comp
+    | Cexp_array_comprehension (amut, comp) ->
+        let punct = match amut with
+          | Mutable  -> "|"
+          | Immutable -> ":"
+        in
+        punct, comp
+  in
+  comprehension ctxt f ~open_:("[" ^ punct) ~close:(punct ^ "]") comp
 
 and comprehension ctxt f ~open_ ~close x =
   let Extensions.Comprehensions.{ body; clauses } = x in

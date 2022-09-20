@@ -27,6 +27,7 @@ module Value_mode = Btype.Value_mode
 type comprehension_type =
   | List_comprehension
   | Array_comprehension
+  | Iarray_comprehension
 
 type type_forcing_context =
   | If_conditional
@@ -6328,10 +6329,14 @@ and type_comprehension_expr
         Predef.type_list,
         (fun tcomp -> Texp_list_comprehension tcomp),
         comp
-    | Cexp_array_comprehension comp ->
-        Array_comprehension,
-        Predef.type_array,
-        (fun tcomp -> Texp_array_comprehension tcomp),
+    | Cexp_array_comprehension (amut, comp) ->
+        let comprehension_type, container_type = match amut with
+          | Mutable   -> Array_comprehension,  Predef.type_array
+          | Immutable -> Iarray_comprehension, Predef.type_iarray
+        in
+        comprehension_type,
+        container_type,
+        (fun tcomp -> Texp_array_comprehension (amut, tcomp)),
         comp
   in
   if !Clflags.principal then begin_def ();
@@ -6740,8 +6745,11 @@ let report_type_expected_explanation expl ppf =
   | Comprehension_in_iterator comp_ty ->
       because1 "a for-in iterator in %s comprehension"
         (match comp_ty with
-         | List_comprehension  -> "a list"
-         | Array_comprehension -> "an array")
+         | List_comprehension   -> "a list"
+         | Array_comprehension  -> "an array" (* CR aspectorzabusky: We should
+                                                 omit the word "mutable" here,
+                                                 right? *)
+         | Iarray_comprehension -> "an immutable array")
   | Comprehension_for_start ->
       because "a range-based for iterator start index in a comprehension"
   | Comprehension_for_stop ->

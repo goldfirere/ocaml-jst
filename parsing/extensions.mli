@@ -10,7 +10,7 @@
        and to match on terms of those OCaml ASTs to see if they're language
        extension terms.
 
-    We keep our language extensions separateso that we can avoid having to
+    We keep our language extensions separate so that we can avoid having to
     modify the existing AST, as this would break compatibility with every
     existing ppx.
 
@@ -28,9 +28,9 @@ module Comprehensions : sig
     | In of Parsetree.expression
       (** "in EXPR" *)
 
-  (* CR aspectorzabusky: I wonder if the [pattern] should be merged with [iterator], like
-     it is in [Typedtree], since we can't even represent non--variable-or-underscore
-     patterns for for loops in Lambda. *)
+  (* CR aspectorzabusky: I wonder if the [pattern] should be merged with
+     [iterator], like it is in [Typedtree], since we can't even represent
+     non--variable-or-underscore patterns for for loops in Lambda. *)
   type clause_binding =
     { pattern    : Parsetree.pattern
     ; iterator   : iterator
@@ -52,8 +52,10 @@ module Comprehensions : sig
   type comprehension_expr =
     | Cexp_list_comprehension  of comprehension
     (** [BODY ...CLAUSES...] *)
-    | Cexp_array_comprehension of comprehension
-    (** [|BODY ...CLAUSES...|] *)
+    | Cexp_array_comprehension of Asttypes.mutable_flag * comprehension
+    (** [|BODY ...CLAUSES...|] (flag = Mutable)
+        [:BODY ...CLAUSES...:] (flag = Immutable)
+          (only allowed with [-extension Immutable_arrays]) *)
 end
 
 (** The ASTs for immutable arrays.  When we merge this upstream, we'll merge

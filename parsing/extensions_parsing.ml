@@ -7,7 +7,7 @@
     command line), the extension node used must be [[%extension.EXTNAME]].  We
     also provide utilities for further desugaring similar applications where the
     extension nodes have the longer form [[%extension.EXTNAME.ID1.ID2.….IDn]]
-    (with the outermost one being the [n = 0] case), as these might be used 
+    (with the outermost one being the [n = 0] case), as these might be used
     inside the [EXPR].  (For example, within the outermost
     [[%extension.comprehensions]] term for list and array comprehensions, we can
     also use [[%extension.comprehensions.list]],
@@ -25,13 +25,13 @@
     constraints on what legal bodies are; we're also happy for this translation
     to error in various ways on malformed input, since nobody should ever be
     writing these forms directly.  They're just an implementation detail.
-    
+
     To represent these, we choose the following schemes for the existing
     syntactic categories:
 
     - Expressions: Language extensions are to be rendered as an application of
       the extension node to the body, i.e. [([%extension.EXTNAME] EXPR)].
-    
+
     - Patterns: Language extensions are to be rendered as a tuple pattern
       containing the extension node and the body, i.e.
       [[%extension.EXTNAME], EXPR].
@@ -67,9 +67,13 @@ type error =
   | Bad_introduction of string * string list
 
 (** The main exception type thrown when desugaring a language extension from an
-    OCaml AST; we also use [failwith] occasionally for internal errors, as well
-    as the occasional [Misc.fatal_errorf]. *)
+    OCaml AST; we also use the occasional [Misc.fatal_errorf]. *)
 exception Error of Location.t * error
+
+let assert_extension_enabled ~loc ext =
+  if not (Clflags.Extension.is_enabled ext) then
+    raise (Error(loc, Disabled_extension ext))
+;;
 
 let report_error ~loc = function
   | Malformed_extension(name, malformed) -> begin
@@ -146,7 +150,7 @@ let () =
 module type AST_parameters = sig
   (** The AST type (e.g., [Parsetree.expression]) *)
   type ast
-  
+
   (** The type of the subterms that occur in the "body" slot of an extension
       use.  This may just be [ast], but e.g. for expressions, we use function
       applications, and the terms that a function is applied to contain label
@@ -173,14 +177,14 @@ module type AST_parameters = sig
       syntactic form we use for language extensions for this syntactic
       category.  Partial inverse of [match_extension_use]. *)
   val make_extension_use  : loc:Location.t -> extension_node:ast -> ast -> ast
-  
+
   (** Given an AST node, check if it's of the special syntactic form indicating
       that this is a language extension (as created by [make_extension_node]),
       split it back up into the extension node and the possible body terms.
       Doesn't do any checking about the name/format of the extension or the
       possible body terms (see [AST.match_extension]).  Partial inverse of
       [make_extension_use]. *)
-  val match_extension_use : ast -> (extension * raw_body list) option  
+  val match_extension_use : ast -> (extension * raw_body list) option
 
   (** Check if a [raw_body] term is legal to use as a body *)
   val validate_extension_body : raw_body -> ast option
@@ -195,7 +199,7 @@ module type AST = sig
   type ast
 
   val plural : string
-  
+
   val location : ast -> Location.t
 
   val make_extension  : loc:Location.t -> string list -> ast -> ast
@@ -222,7 +226,7 @@ module AST (AST : AST_parameters) : AST with type ast = AST.ast = struct
         (make_extension_node
            ~loc
            ({ txt = String.concat "." ("extension" :: names); loc }, PStr []))
-  
+
   (* This raises an error if the language extension node is malformed. Malformed
      means either:
 
@@ -293,7 +297,7 @@ module Pattern = AST(struct
 
   let make_extension_use ~loc ~extension_node pat =
     Ast_helper.Pat.tuple ~loc [extension_node; pat]
-                          
+
   let match_extension_use pat =
     match pat.ppat_desc with
     | Ppat_tuple({ppat_desc = Ppat_extension ext; _} :: patterns) ->
@@ -338,7 +342,7 @@ module Translate
     ('ast, 'ext_ast) Syntactic_category.t ->
     'ast ->
     'ext_ast option
-  
+
   val ast_of_extension_ast :
     ('ast, 'ext_ast) Syntactic_category.t ->
     loc:Location.t ->
@@ -352,28 +356,27 @@ end = struct
         (ast : ast)
       : ext_ast option =
     let (module AST) = Syntactic_category.ast_module cat in
-    let raise_error err = raise (Error (AST.location ast, err)) in
+    let loc = AST.location ast in
+    let raise_error err = raise (Error (loc, err)) in
     match AST.match_extension ast with
     | None -> None
     | Some ([name], ast) -> begin
         match Clflags.Extension.of_string name with
-        | Some ext ->
-            if Clflags.Extension.is_enabled ext
-            then
-              match Syntactic_category.ast_extension cat ext with
-              | Supported { of_ast; wrap; _ } ->
-                  Some (wrap (of_ast ast))
-              | Unsupported ->
-                  raise_error (Wrong_syntactic_category(ext, AST.plural))
-            else
-              raise_error (Disabled_extension ext)
-        | _ -> raise_error (Unknown_extension name)
+        | Some ext -> begin
+            assert_extension_enabled ~loc ext;
+            match Syntactic_category.ast_extension cat ext with
+            | Supported { of_ast; wrap; _ } ->
+                Some (wrap (of_ast ast))
+            | Unsupported ->
+                raise_error (Wrong_syntactic_category(ext, AST.plural))
+          end
+        | None -> raise_error (Unknown_extension name)
       end
     | Some ([], _) ->
         raise_error Unnamed_extension
     | Some (name :: subnames, _) ->
         raise_error (Bad_introduction(name, subnames))
-   
+
   let ast_of_extension_ast
         (type ast ext_ast)
         (cat : (ast, ext_ast) Syntactic_category.t)
@@ -385,6 +388,7 @@ end = struct
     let raise_error err = raise (Error(loc, err)) in
     match Syntactic_category.ast_extension cat extn with
     | Supported { unwrap; ast_of; _ } -> begin
+        assert_extension_enabled ~loc extn;
         match unwrap east with
         | Some east' ->
             AST.make_extension

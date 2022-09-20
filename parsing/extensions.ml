@@ -1,3 +1,4 @@
+open Asttypes
 open Parsetree
 open Extensions_parsing
 
@@ -9,7 +10,7 @@ module Comprehensions = struct
   type iterator =
     | Range of { start     : expression
                ; stop      : expression
-               ; direction : Asttypes.direction_flag }
+               ; direction : direction_flag }
     | In of expression
 
   type clause_binding =
@@ -28,7 +29,7 @@ module Comprehensions = struct
 
   type comprehension_expr =
     | Cexp_list_comprehension  of comprehension
-    | Cexp_array_comprehension of comprehension
+    | Cexp_array_comprehension of mutable_flag * comprehension
 
   (** Because we construct a lot of subexpressions, we save the name here *)
   let extension_name = Clflags.Extension.to_string Comprehensions
@@ -40,7 +41,7 @@ module Comprehensions = struct
   (** First, we define how to go from the nice AST to the OCaml AST; this is
       the [expr_of_...] family of expressions, culminating in
       [expr_of_comprehension_expr]. *)
-    
+
   let expr_of_iterator ~loc = function
     | Range { start; stop; direction } ->
         comprehension_expr
@@ -79,7 +80,7 @@ module Comprehensions = struct
   let expr_of_comprehension ~loc ~type_ { body; clauses } =
     comprehension_expr
       ~loc
-      [type_]
+      type_
       (List.fold_right
          (expr_of_clause ~loc)
          clauses
@@ -91,9 +92,20 @@ module Comprehensions = struct
       expr_of_comprehension ~loc:ghost_loc ~type_
     in
     match eexpr with
-    | Cexp_list_comprehension  comp -> expr_of_comprehension_type "list"  comp
-    | Cexp_array_comprehension comp -> expr_of_comprehension_type "array" comp
-  
+    | Cexp_list_comprehension comp ->
+        expr_of_comprehension_type ["list"]  comp
+    | Cexp_array_comprehension (amut, comp) ->
+        expr_of_comprehension_type
+          [ "array"
+          ; match amut with
+            | Mutable   ->
+                "mutable"
+            | Immutable ->
+                assert_extension_enabled ~loc Immutable_arrays;
+                "immutable"
+          ]
+          comp
+
   (** Then, we define how to go from the OCaml AST to the nice AST; this is
       the [..._of_expr] family of expressions, culminating in
       [comprehension_expr_of_expr]. *)
@@ -162,8 +174,11 @@ module Comprehensions = struct
     match expand_comprehension_extension_expr expr with
     | ["list"], comp ->
         Cexp_list_comprehension (comprehension_of_expr comp)
-    | ["array"], comp ->
-        Cexp_array_comprehension (comprehension_of_expr comp)
+    | ["array"; "mutable"], comp ->
+        Cexp_array_comprehension (Mutable, comprehension_of_expr comp)
+    | ["array"; "immutable"], comp ->
+        assert_extension_enabled ~loc:expr.pexp_loc Immutable_arrays;
+        Cexp_array_comprehension (Immutable, comprehension_of_expr comp)
     | bad, _ ->
         expand_comprehension_extension_expr_failure bad
 end
@@ -174,20 +189,20 @@ module Immutable_arrays = struct
     | Iaexp_immutable_array of expression list
         (** [: E1; ...; En :] *)
 
-  type nonrec pattern = 
+  type nonrec pattern =
     | Iapat_immutable_array of pattern list
         (** [: P1; ...; Pn :] **)
 
   let expr_of ~loc = function
     | Iaexp_immutable_array elts -> Ast_helper.Exp.array ~loc elts
-                     
+
   let of_expr expr = match expr.pexp_desc with
     | Pexp_array elts -> Iaexp_immutable_array elts
     | _ -> failwith "Malformed immutable array expression"
 
   let pat_of ~loc = function
     | Iapat_immutable_array elts -> Ast_helper.Pat.array ~loc elts
-                     
+
   let of_pat expr = match expr.ppat_desc with
     | Ppat_array elts -> Iapat_immutable_array elts
     | _ -> failwith "Malformed immutable array expression"
