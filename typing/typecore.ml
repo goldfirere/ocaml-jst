@@ -2749,8 +2749,7 @@ let rec is_nonexpansive exp =
   | Texp_unreachable
   | Texp_function _
   | Texp_probe_is_enabled _
-  | Texp_array []
-  | Texp_immutable_array [] -> true
+  | Texp_array (_, []) -> true
   | Texp_let(_rec_flag, pat_exp_list, body) ->
       List.for_all (fun vb -> is_nonexpansive vb.vb_expr) pat_exp_list &&
       is_nonexpansive body
@@ -2829,8 +2828,7 @@ let rec is_nonexpansive exp =
              Id_prim _) },
       [Nolabel, Arg e], _) ->
      is_nonexpansive e
-  | Texp_array (_ :: _)
-  | Texp_immutable_array (_ :: _)
+  | Texp_array (_, _ :: _)
   | Texp_apply _
   | Texp_try _
   | Texp_setfield _
@@ -3144,8 +3142,7 @@ let check_partial_application statement exp =
             match exp_desc with
             | Texp_ident _ | Texp_constant _ | Texp_tuple _
             | Texp_construct _ | Texp_variant _ | Texp_record _
-            | Texp_field _ | Texp_setfield _
-            | Texp_array _ | Texp_immutable_array _
+            | Texp_field _ | Texp_setfield _ | Texp_array _
             | Texp_list_comprehension _ | Texp_array_comprehension _
             | Texp_while _ | Texp_for _ | Texp_instvar _
             | Texp_setinstvar _ | Texp_override _ | Texp_assert _
@@ -3976,7 +3973,7 @@ and type_expect_
         ~ty_expected
         ~explanation
         ~type_:Predef.type_array
-        ~texp:(fun elts -> Texp_array elts)
+        ~mutability:Mutable
         ~attributes:sexp.pexp_attributes
         sargl
   | Pexp_ifthenelse(scond, sifso, sifnot) ->
@@ -6268,6 +6265,7 @@ and type_andops env sarg sands expected_ty =
   let let_arg, rev_ands = loop env sarg (List.rev sands) expected_ty in
   let_arg, List.rev rev_ands
 
+(* Can be re-inlined when we upstream immutable arrays *)
 and type_generic_array
       ~loc
       ~env
@@ -6275,7 +6273,7 @@ and type_generic_array
       ~ty_expected
       ~explanation
       ~type_
-      ~texp
+      ~mutability
       ~attributes
       sargl
   =
@@ -6291,7 +6289,7 @@ and type_generic_array
       sargl
   in
   re {
-    exp_desc = texp argl;
+    exp_desc = Texp_array (mutability, argl);
     exp_loc = loc; exp_extra = [];
     exp_type = instance ty_expected;
     exp_mode = expected_mode.mode;
@@ -6584,7 +6582,7 @@ and type_comprehension_iterator
 
 and type_immutable_array ~loc ~env ~expected_mode ~ty_expected ~explanation
     : Extensions.Immutable_arrays.expression -> _ = function
-  | Iaexp_immutable_array elts -> 
+  | Iaexp_immutable_array elts ->
       type_generic_array
         ~loc
         ~env
@@ -6592,7 +6590,7 @@ and type_immutable_array ~loc ~env ~expected_mode ~ty_expected ~explanation
         ~ty_expected
         ~explanation
         ~type_:Predef.type_iarray
-        ~texp:(fun elts -> Texp_immutable_array elts)
+        ~mutability:Immutable
         ~attributes:[] (* CR aspectorzabusky: This can't be right *)
         elts
 
