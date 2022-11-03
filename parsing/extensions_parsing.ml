@@ -141,6 +141,17 @@ let () =
       | _ -> None)
 
 (******************************************************************************)
+(* extension names *)
+
+module Extension_name = struct
+  type t = string list
+
+  let prepend x xs = x :: xs
+  let to_string_list = Fun.id
+  let from_string_list = Fun.id
+end
+
+(******************************************************************************)
 (** Generically find and create the OCaml AST syntax used to encode one of our
     language extensions.  One module per variety of AST (expressions, patterns,
     etc.). *)
@@ -313,62 +324,30 @@ end)
 (** Generically lift and lower our custom language extension ASTs from/to OCaml
     ASTs. *)
 
-type ('ext, 'ast, 'ext_ast) ast_extension =
-  { ast_of : loc:Location.t -> 'ext -> 'ast
-  ; of_ast : 'ast -> 'ext
-  ; wrap   : 'ext -> 'ext_ast
-  ; unwrap : 'ext_ast -> 'ext option }
+module type Translation = sig
+  module AST : AST
 
-type ('ast, 'ext_ast) optional_ast_extension =
-  | Supported :
-      (_, 'ast, 'ext_ast) ast_extension ->
-      ('ast, 'ext_ast) optional_ast_extension
-  | Unsupported
+  type t
 
-module Translate
-         (Syntactic_category : sig
-            type ('ast, 'ext_ast) t
+  val ast_of : loc:Location.t -> t -> AST.ast
+  val of_ast_internal : Clflags.Extension.t -> AST.ast -> t option
+end
 
-            val ast_module :
-              ('ast, 'ext_ast) t ->
-              (module AST with type ast = 'ast)
-
-            val ast_extension :
-              ('ast, 'ext_ast) t ->
-              Clflags.Extension.t ->
-              ('ast, 'ext_ast) optional_ast_extension
-          end) : sig
-  val extension_ast_of_ast :
-    ('ast, 'ext_ast) Syntactic_category.t ->
-    'ast ->
-    'ext_ast option
-
-  val ast_of_extension_ast :
-    ('ast, 'ext_ast) Syntactic_category.t ->
-    loc:Location.t ->
-    Clflags.Extension.t ->
-    'ext_ast ->
-    'ast
+module Translate (Translation : Translation) : sig
+  val of_ast : Translation.AST.ast -> Translation.t option
 end = struct
-  let extension_ast_of_ast
-        (type ast ext_ast)
-        (cat : (ast, ext_ast) Syntactic_category.t)
-        (ast : ast)
-      : ext_ast option =
-    let (module AST) = Syntactic_category.ast_module cat in
-    let loc = AST.location ast in
+  let of_ast ast =
+    let loc = Translation.AST.location ast in
     let raise_error err = raise (Error (loc, err)) in
-    match AST.match_extension ast with
+    match Translation.AST.match_extension ast with
     | None -> None
     | Some ([name], ast) -> begin
         match Clflags.Extension.of_string name with
         | Some ext -> begin
             assert_extension_enabled ~loc ext;
-            match Syntactic_category.ast_extension cat ext with
-            | Supported { of_ast; wrap; _ } ->
-                Some (wrap (of_ast ast))
-            | Unsupported ->
-                raise_error (Wrong_syntactic_category(ext, AST.plural))
+            match Translation.of_ast_internal ext ast with
+            | Some ext_ast -> Some ext_ast
+            | None -> raise_error (Wrong_syntactic_category(ext, Translation.AST.plural))
           end
         | None -> raise_error (Unknown_extension name)
       end
@@ -376,31 +355,4 @@ end = struct
         raise_error Unnamed_extension
     | Some (name :: subnames, _) ->
         raise_error (Bad_introduction(name, subnames))
-
-  let ast_of_extension_ast
-        (type ast ext_ast)
-        (cat : (ast, ext_ast) Syntactic_category.t)
-        ~(loc : Location.t)
-        (extn : Clflags.Extension.t)
-        (east : ext_ast)
-      : ast =
-    let (module AST) = Syntactic_category.ast_module cat in
-    let raise_error err = raise (Error(loc, err)) in
-    match Syntactic_category.ast_extension cat extn with
-    | Supported { unwrap; ast_of; _ } -> begin
-        assert_extension_enabled ~loc extn;
-        match unwrap east with
-        | Some east' ->
-            AST.make_extension
-              ~loc
-              [Clflags.Extension.to_string extn]
-              (ast_of ~loc east')
-        | None ->
-            Misc.fatal_errorf
-              "Incorrect extension \"%s\" specified when trying to lower a \
-               language extension to the OCaml AST"
-              (Clflags.Extension.to_string extn)
-      end
-    | Unsupported ->
-       raise_error (Wrong_syntactic_category(extn, AST.plural))
 end

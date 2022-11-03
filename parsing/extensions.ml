@@ -32,11 +32,11 @@ module Comprehensions = struct
     | Cexp_array_comprehension of mutable_flag * comprehension
 
   (** Because we construct a lot of subexpressions, we save the name here *)
-  let extension_name = Clflags.Extension.to_string Comprehensions
+  let extension_string = Clflags.Extension.to_string Comprehensions
 
   (* CR aspectorzabusky: new name? *)
   let comprehension_expr ~loc names =
-    Expression.make_extension ~loc (extension_name :: names)
+    Expression.make_extension ~loc (Extension_name.prepend extension_string names)
 
   (** First, we define how to go from the nice AST to the OCaml AST; this is
       the [expr_of_...] family of expressions, culminating in
@@ -212,99 +212,44 @@ end
     however, we need to extend these modules later, so we have to give these
     modules backup names, and we drop the [Ext] for export. *)
 
-module Ext_expression = struct
+module Ext_expression : AST_internal = struct
   type t =
     | Eexp_comprehension   of Comprehensions.comprehension_expr
     | Eexp_immutable_array of Immutable_arrays.expression
+  type ast = expression
+
+  let ast_of ~loc = function
+    | Eexp_comprehension cexpr ->
+      (* TODO: shave yak further? perhaps by passing Comprehensions as fcm *)
+      Expression.make_extension ~loc Comprehensions.extension_name
+        (Comprehensions.expr_of_comprehension_expr ~loc cexpr)
+    | Eexp_immutable_array iaexpr ->
+      Expression.make_extension ~loc Immutable_arrays.extension_name
+        (Immutable_arrays.expr_of ~loc iaexpr)
+
+  let of_ast_internal ext expr = match ext with
+    | Comprehensions ->
+      Some (Eexp_comprehension (Comprehensions.comprehension_expr_of_expr expr))
+    | Immutable_arrays ->
+      Some (Eexp_immutable_array (Immutable_arrays.of_expr expr))
+    | _ -> None
 end
 
-module Ext_pattern = struct
+module Ext_pattern : AST_internal = struct
   type t =
     | Epat_immutable_array of Immutable_arrays.pattern
+  type ast = pattern
+
+  let ast_of ~loc = function
+    | Epat_immutable_array iapat ->
+      Pattern.make_extension ~loc Immutable_arrays.extension_name
+        (Immutable_arrays.pat_of ~loc iapat)
+
+  let of_ast_internal ext pat = match ext with
+    | Immutable_arrays ->
+      Some (Epat_immutable_array (Immutable_arrays.of_pat pat))
+    | _ -> None
 end
-
-(** How a single extension lifts and lowers its terms from and to the
-    corresponding OCaml AST type, for every syntactic category at once; at least
-    one of the fields should be [Supported].  We're adding fields (syntactic
-    categories) to this type as needed. *)
-type extension =
-  { expression : (expression, Ext_expression.t) optional_ast_extension
-  ; pattern    : (pattern,    Ext_pattern.t)    optional_ast_extension
-  }
-
-(** Construct an [extension].  We use optional arguments here because there are
-   (or have the potential to be) a lot of syntactic categories and we really
-   don't want to have to say [Unsupported] for all of them. *)
-(* CR aspectorzabusky: Don't love this function name *)
-let extension_embeddings ?expression ?pattern () =
-  let of_option = function
-    | Some ae -> Supported ae
-    | None    -> Unsupported
-  in
-  { expression = of_option expression
-  ; pattern    = of_option pattern }
-
-(** Map a language extension name to its parsing [extension].  There are some
-    extensions that we handle separately; these will raise an error if supplied
-    here. *)
-let extension : Clflags.Extension.t -> extension = function
-  | Comprehensions ->
-      extension_embeddings
-        ~expression:{ ast_of = Comprehensions.expr_of_comprehension_expr
-                    ; of_ast = Comprehensions.comprehension_expr_of_expr
-                    ; wrap   = (fun cexp -> Eexp_comprehension cexp)
-                    ; unwrap = (function | Eexp_comprehension cexp -> Some cexp
-                                         | _                       -> None) }
-        ()
-  | Immutable_arrays ->
-      extension_embeddings
-        ~expression:{ ast_of = Immutable_arrays.expr_of
-                    ; of_ast = Immutable_arrays.of_expr
-                    ; wrap   = (fun iaexp -> Eexp_immutable_array iaexp)
-                    ; unwrap = (function | Eexp_immutable_array iaexp -> Some iaexp
-                                         | _                          -> None) }
-        ~pattern:{ ast_of = Immutable_arrays.pat_of
-                 ; of_ast = Immutable_arrays.of_pat
-                 ; wrap   = (fun iapat -> Epat_immutable_array iapat)
-                 ; unwrap = (function | Epat_immutable_array iapat -> Some iapat) }
-        ()
-  | (Local | Include_functor) as ext ->
-      (* CR aspectorzabusky: See the comment at the start of this file. *)
-      Misc.fatal_errorf
-        "The extension \"%s\" should be handled through its own mechanism, not \
-         this uniform one."
-        (Clflags.Extension.to_string ext)
-
-(******************************************************************************)
-(** Moving to and from OCaml ASTs *)
-
-(** A type-indexed enumeration for selecting a specific syntactic category; see
-    the argument to the [Translate] functor for details. *)
-module Syntactic_category = struct
-  (* One constructor per field of [extension] *)
-  type ('ast, 'ext_ast) t =
-    | Expression : (expression, Ext_expression.t) t
-    | Pattern    : (pattern,    Ext_pattern.t)    t
-
-  let ast_module (type ast ext_ast) (cat : (ast, ext_ast) t)
-      : (module AST with type ast = ast) =
-    match cat with
-    | Expression -> (module Expression)
-    | Pattern    -> (module Pattern)
-
-  let ast_extension (type ast ext_ast) (cat : (ast, ext_ast) t) ext
-      : (ast, ext_ast) optional_ast_extension =
-    let ext = extension ext in
-    match cat with
-    | Expression -> ext.expression
-    | Pattern    -> ext.pattern
-end
-
-(** See the [Translate] functor *)
-include Translate(Syntactic_category)
-
-(** Both translations at once *)
-let extension_translations cat = extension_ast_of_ast cat, ast_of_extension_ast cat
 
 (******************************************************************************)
 (** The interface to language extensions, which we export; at this point we're
@@ -320,16 +265,10 @@ end
 
 module Expression = struct
   include Ext_expression
-
-  type ast = Parsetree.expression
-
-  let of_ast, ast_of = extension_translations Expression
+  include Translate(Ext_expression)
 end
 
 module Pattern = struct
   include Ext_pattern
-
-  type ast = Parsetree.pattern
-
-  let of_ast, ast_of = extension_translations Pattern
+  include Translate(Ext_pattern)
 end

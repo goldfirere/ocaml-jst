@@ -92,12 +92,10 @@ module type AST = sig
       language extension term, raise an error. *)
   val of_ast : ast -> t option
 
-  (** Given a location, an extension, and a language-extension term, wrap our
+  (** Given a location and a language-extension term, wrap our
       custom term into the existing OCaml AST.  Succeeds whether or not the
-      extension is enabled.  The language extension specified *must* correspond
-      to the constructor of the language extension AST, or this function will
-      raise a fatal error. *)
-  val ast_of : loc:Location.t -> Clflags.Extension.t -> t -> ast
+      extension is enabled. *)
+  val ast_of : loc:Location.t -> t -> ast
 end
 
 (** Language extensions in expressions *)

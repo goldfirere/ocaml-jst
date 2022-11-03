@@ -52,7 +52,7 @@
        cases at one stroke.
 
     We then bundle this all up for each individual extension into the type
-    [ast_extension] containing, for one syntactic category, two different
+    TODO (update) [ast_extension] containing, for one syntactic category, two different
     (partial) isomorphisms: the fully isomorphic (up to exceptions) ability to
     lift and lower between the custom AST type (from design point (a)) and
     existing AST expressions, leveraging the common format for representing
@@ -75,6 +75,22 @@
     all the messy AST-manipulation here, and work with it abstractly while
     defining the language extensions themselves.  *)
 
+(** The name of an extension: a representation of <this> in
+    [%extension.<this> ...]. *)
+module Extension_name : sig
+  type t
+
+  (** Prepend a new component to an extension name *)
+  val prepend : string -> t -> t
+
+  (** Convert to a list of strings, for inspection; no "extension" prefix
+      here *)
+  val to_string_list : t -> string list
+
+  (** Create from a list of strings (without an "extension" prefix) *)
+  val from_string_list : string list -> t
+end
+
 (** The type of modules that lift and lower language extension terms from and
     to an OCaml AST type ([ast]) *)
 module type AST = sig
@@ -88,18 +104,18 @@ module type AST = sig
   (** How to get the location attached to an AST node *)
   val location : ast -> Location.t
 
-  (** Embed a language extension term in the AST with the given name (the
-      [string list]) and body (the [ast]).  The name will be joined with dots
+  (** Embed a language extension term in the AST with the given name
+      and body (the [ast]).  The name will be joined with dots
       and preceded by [extension.].  Partial inverse of [match_extension]. *)
-  val make_extension  : loc:Location.t -> string list -> ast -> ast
+  val make_extension  : loc:Location.t -> Extension_name.t -> ast -> ast
 
   (** Given an AST node, check if it's a language extension term; if it is,
-      split it back up into its name (the [string list]) and the body (the
+      split it back up into its name and the body (the
       [ast]); the resulting name is split on dots and the leading [extension]
-      component is dropped..  If the language extension term is malformed in any
+      component is dropped.  If the language extension term is malformed in any
       way, raises an error; if the input isn't a language extension term,
       returns [None].  Partial inverse of [make_extension]. *)
-  val match_extension : ast -> (string list * ast) option
+  val match_extension : ast -> (Extension_name.t * ast) option
 end
 
 (** One [AST] module per syntactic category we currently care about; we're
@@ -108,31 +124,6 @@ end
 module Expression : AST with type ast = Parsetree.expression
 module Pattern    : AST with type ast = Parsetree.pattern
 
-(** What makes a language extension, for a single syntactic category.  Given a
-    language extension AST ['ext], an OCaml AST ['ast], and our auxiliary
-    all-extension AST ['ext_ast], then we need to know how to convert any term
-    of type ['ext] to ([ast_of]) and from ([of_ast]) an OCaml AST node, and how
-    to convert it to ([wrap]) and from ([unwrap]) our eventual auxiliary
-    all-extension AST.  The first two are expected to each correspond to a
-    function defined in an eventual language-extension-specific module; the
-    latter two are expected to correspond to a constructor and a
-    pattern-matching function, respectively. *)
-type ('ext, 'ast, 'ext_ast) ast_extension =
-  { ast_of : loc:Location.t -> 'ext -> 'ast
-  ; of_ast : 'ast -> 'ext
-  ; wrap   : 'ext -> 'ext_ast
-  ; unwrap : 'ext_ast -> 'ext option }
-
-(** Hiding the specific extension type lets us work with [ast_extension]s
-    uniformly; since we don't support every syntactic category for every
-    extension, we combine this with making the presence of the [ast_extension]
-    optional, which aids abstraction later. *)
-type ('ast, 'ext_ast) optional_ast_extension =
-  | Supported :
-      (_, 'ast, 'ext_ast) ast_extension ->
-      ('ast, 'ext_ast) optional_ast_extension
-  | Unsupported
-
 (** Create the two core functions of this module: lifting and lowering OCaml AST
     terms from any syntactic category to and from our auxiliary all-extension
     ASTs.
@@ -140,52 +131,23 @@ type ('ast, 'ext_ast) optional_ast_extension =
     This will only get instantiated once; however, by making it a functor, we
     can keep all the general logic together here in this module, and keep the
     extension-specific stuff in [Extensions].. *)
-module Translate
-         (Syntactic_category : sig
-            (** A type-indexed enumeration for selecting a specific syntactic
-                category *)
-            type ('ast, 'ext_ast) t
 
-            (** Given a syntactic category, get the module for manipulating
-                language extensions of it *)
-            val ast_module :
-              ('ast, 'ext_ast) t ->
-              (module AST with type ast = 'ast)
+module type Translation = sig
+  module AST : AST
 
-            (** Given a syntactic category and a language extension, get the
-                [ast_extension] for lifting and lowering its terms if it's
-                available. *)
-            val ast_extension :
-              ('ast, 'ext_ast) t ->
-              Clflags.Extension.t ->
-              ('ast, 'ext_ast) optional_ast_extension
-          end) : sig
+  type t
+
+  val ast_of : loc:Location.t -> t -> AST.ast
+  val of_ast_internal : Clflags.Extension.t -> AST.ast -> t option
+end
+
+module Translate (Translation : Translation) : sig
+
   (** Interpret an AST term in the specified syntactic category as a term of the
       appropriate auxiliary language extension AST if possible.  Raises an error
       if the extension it finds is disabled or if the language extension
       embedding is malformed.  *)
-  val extension_ast_of_ast :
-    ('ast, 'ext_ast) Syntactic_category.t ->
-    'ast ->
-    'ext_ast option
-
-  (* CR aspectorzabusky: Is this really the right API, with the extension
-     specified twice?  There's a bit of redundancy, but I don't see how to
-     alleviate it without making uses of [Expression.make_extension] bulkier,
-     and that's right out. *)
-  (** Interpret an auxiliary extended language extension AST term from the
-      specified extension as a term of the appropriate OCaml AST.  Raises an
-      error if the language extension is disabled.  The language extension
-      specified *must* correspond to the constructor of ['ext_ast] and provide
-      support for the specified syntactic category, or this function will raise
-      a fatal error or an exception (respectively); these should both be avoided
-      statically, as the relevant values are expected to be literals. *)
-  val ast_of_extension_ast :
-    ('ast, 'ext_ast) Syntactic_category.t ->
-    loc:Location.t ->
-    Clflags.Extension.t ->
-    'ext_ast ->
-    'ast
+  val of_ast : Translation.AST.ast -> Translation.t option
 end
 
 (** Require that an extension is enabled, or else throw an exception (of an
