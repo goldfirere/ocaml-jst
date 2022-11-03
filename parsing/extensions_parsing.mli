@@ -125,7 +125,7 @@ module type Translation = sig
   val of_ast_internal : Clflags.Extension.t -> AST.ast -> t option
 end
 
-module Translate (Translation : Translation) : sig
+module Make_of_ast (Translation : Translation) : sig
 
   (** Interpret an AST term in the specified syntactic category as a term of the
       appropriate auxiliary language extension AST if possible.  Raises an error

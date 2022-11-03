@@ -146,7 +146,8 @@ let () =
     etc.). *)
 
 (** The parameters that define how to look for [[%extension.EXTNAME]] inside
-    ASTs of a certain syntactic category.  See also the [AST] functor. *)
+    ASTs of a certain syntactic category.  See also the [AST] functor, which
+    uses these definitions to make the e.g. [Expression] module. *)
 module type AST_parameters = sig
   (** The AST type (e.g., [Parsetree.expression]) *)
   type ast
@@ -213,11 +214,11 @@ let uniformly_handled_extension names =
   | [("local"|"global"|"nonlocal"|"escape"|"include_functor"|"curry")] -> false
   | _ -> true
 
-(** Given the definition of an AST for a syntactic category, produce the
+(** Given the [AST_parameters] for a syntactic category, produce the
     corresponding module, of type [AST], for lowering and lifting language
     extension syntax from and to it. *)
-module AST (AST : AST_parameters) : AST with type ast = AST.ast = struct
-  include AST
+module Make_AST (AST_parameters : AST_parameters) : AST with type ast = AST_parameters.ast = struct
+  include AST_parameters
 
   let make_extension ~loc names =
     make_extension_use
@@ -257,7 +258,7 @@ module AST (AST : AST_parameters) : AST with type ast = AST.ast = struct
 end
 
 (** Expressions; embedded as [([%extension.EXTNAME] BODY)]. *)
-module Expression = AST(struct
+module Expression = Make_AST(struct
   type ast = expression
   type raw_body = Asttypes.arg_label * expression (* Function arguments *)
 
@@ -284,8 +285,8 @@ module Expression = AST(struct
   let malformed_extension args = Wrong_arguments args
 end)
 
-(** Expressions; embedded as [[%extension.EXTNAME], BODY]. *)
-module Pattern = AST(struct
+(** Patterns; embedded as [[%extension.EXTNAME], BODY]. *)
+module Pattern = Make_AST(struct
   type ast = pattern
   type raw_body = pattern
 
@@ -322,7 +323,7 @@ module type Translation = sig
   val of_ast_internal : Clflags.Extension.t -> AST.ast -> t option
 end
 
-module Translate (Translation : Translation) : sig
+module Make_of_ast (Translation : Translation) : sig
   val of_ast : Translation.AST.ast -> Translation.t option
 end = struct
   let of_ast ast =

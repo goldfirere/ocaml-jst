@@ -5,6 +5,23 @@ open Extensions_parsing
 (******************************************************************************)
 (** Individual language extension modules *)
 
+(*
+Note [Check for immutable extension in comprehensions code]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+When we spot a comprehension for a mutable array, we need to make
+sure that both [comprehensions] and [immutable_arrays] are enabled.
+But our general mechanism for checking for enabled extensions
+(in Extensions_parsing.Translate(...).of_ast) won't work well here:
+it triggers when converting from e.g. [[%extensions.comprehensions.array] ...]
+to the comprehensions-specific AST. But if we spot a
+[[%extensions.comprehensions.immutable]], there is no expression to translate.
+
+The alternative would be to track the shape of comprehension in some expression,
+just so it can be translated, just to report if an extension is off. This is
+not a good tradeoff, so we just check the [immutable_arrays] extension when we
+encounter it within the comprehensions code.
+*)
+
 (** List and array comprehensions *)
 module Comprehensions = struct
   type iterator =
@@ -100,7 +117,6 @@ module Comprehensions = struct
             | Mutable   ->
                 "mutable"
             | Immutable ->
-                assert_extension_enabled ~loc Immutable_arrays;
                 "immutable"
           ]
           comp
@@ -176,6 +192,8 @@ module Comprehensions = struct
     | ["array"; "mutable"], comp ->
         Cexp_array_comprehension (Mutable, comprehension_of_expr comp)
     | ["array"; "immutable"], comp ->
+        (* assert_extension_enabled:
+           See Note [Check for immutable extension in comprehensions code] *)
         assert_extension_enabled ~loc:expr.pexp_loc Immutable_arrays;
         Cexp_array_comprehension (Immutable, comprehension_of_expr comp)
     | bad, _ ->
@@ -274,10 +292,10 @@ end
 
 module Expression = struct
   include Ext_expression
-  include Translate(Ext_expression)
+  include Make_of_ast(Ext_expression)
 end
 
 module Pattern = struct
   include Ext_pattern
-  include Translate(Ext_pattern)
+  include Make_of_ast(Ext_pattern)
 end
