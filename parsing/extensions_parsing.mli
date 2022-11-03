@@ -75,22 +75,6 @@
     all the messy AST-manipulation here, and work with it abstractly while
     defining the language extensions themselves.  *)
 
-(** The name of an extension: a representation of <this> in
-    [%extension.<this> ...]. *)
-module Extension_name : sig
-  type t
-
-  (** Prepend a new component to an extension name *)
-  val prepend : string -> t -> t
-
-  (** Convert to a list of strings, for inspection; no "extension" prefix
-      here *)
-  val to_string_list : t -> string list
-
-  (** Create from a list of strings (without an "extension" prefix) *)
-  val from_string_list : string list -> t
-end
-
 (** The type of modules that lift and lower language extension terms from and
     to an OCaml AST type ([ast]) *)
 module type AST = sig
@@ -107,15 +91,15 @@ module type AST = sig
   (** Embed a language extension term in the AST with the given name
       and body (the [ast]).  The name will be joined with dots
       and preceded by [extension.].  Partial inverse of [match_extension]. *)
-  val make_extension  : loc:Location.t -> Extension_name.t -> ast -> ast
+  val make_extension  : loc:Location.t -> string list -> ast -> ast
 
   (** Given an AST node, check if it's a language extension term; if it is,
-      split it back up into its name and the body (the
+      split it back up into its name (the [string list]) and the body (the
       [ast]); the resulting name is split on dots and the leading [extension]
       component is dropped.  If the language extension term is malformed in any
       way, raises an error; if the input isn't a language extension term,
       returns [None].  Partial inverse of [make_extension]. *)
-  val match_extension : ast -> (Extension_name.t * ast) option
+  val match_extension : ast -> (string list * ast) option
 end
 
 (** One [AST] module per syntactic category we currently care about; we're

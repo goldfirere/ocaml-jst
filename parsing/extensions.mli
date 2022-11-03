@@ -104,7 +104,7 @@ module Expression : sig
     | Eexp_comprehension   of Comprehensions.comprehension_expr
     | Eexp_immutable_array of Immutable_arrays.expression
 
-  include AST with type t := t and type ast = Parsetree.expression
+  include AST with type t := t and type ast := Parsetree.expression
 end
 
 (** Language extensions in patterns *)
@@ -112,5 +112,5 @@ module Pattern : sig
   type t =
     | Epat_immutable_array of Immutable_arrays.pattern
 
-  include AST with type t := t and type ast = Parsetree.pattern
+  include AST with type t := t and type ast := Parsetree.pattern
 end

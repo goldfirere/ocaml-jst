@@ -1937,7 +1937,6 @@ module Conv = struct
             | Immutable ->
                 (Extensions.Pattern.ast_of
                    ~loc:pat.pat_loc
-                   Immutable_arrays
                    (Epat_immutable_array (Iapat_immutable_array pats))
                 ).ppat_desc
           in

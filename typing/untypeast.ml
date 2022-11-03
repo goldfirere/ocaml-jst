@@ -351,7 +351,6 @@ let pattern : type k . _ -> k T.general_pattern -> _ = fun sub pat ->
         | Mutable   -> Ppat_array pats
         | Immutable -> (Extensions.Pattern.ast_of
                           ~loc
-                          Immutable_arrays
                           (Epat_immutable_array (Iapat_immutable_array pats))
                        ).ppat_desc
       end
@@ -422,7 +421,6 @@ let comprehension ~loc sub comp_type comp =
   let comprehension_expr =
     Extensions.Expression.ast_of
       ~loc
-      Comprehensions
       (Eexp_comprehension (comp_type (comprehension comp)))
   in
   comprehension_expr.pexp_desc
@@ -500,7 +498,6 @@ let expression sub exp =
           let expr =
             Extensions.Expression.ast_of
               ~loc
-              Immutable_arrays
               (Eexp_immutable_array (Iaexp_immutable_array plist))
           in
           expr.pexp_desc

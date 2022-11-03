@@ -141,17 +141,6 @@ let () =
       | _ -> None)
 
 (******************************************************************************)
-(* extension names *)
-
-module Extension_name = struct
-  type t = string list
-
-  let prepend x xs = x :: xs
-  let to_string_list = Fun.id
-  let from_string_list = Fun.id
-end
-
-(******************************************************************************)
 (** Generically find and create the OCaml AST syntax used to encode one of our
     language extensions.  One module per variety of AST (expressions, patterns,
     etc.). *)
