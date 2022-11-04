@@ -26,15 +26,9 @@
     to error in various ways on malformed input, since nobody should ever be
     writing these forms directly.  They're just an implementation detail.
 
-    To represent these, we choose the following schemes for the existing
-    syntactic categories:
-
-    - Expressions: Language extensions are to be rendered as an application of
-      the extension node to the body, i.e. [([%extension.EXTNAME] EXPR)].
-
-    - Patterns: Language extensions are to be rendered as a tuple pattern
-      containing the extension node and the body, i.e.
-      [[%extension.EXTNAME], EXPR].
+    See modules of type AST below to see how different syntactic categories
+    are represented. For example, expressions are rendered as an application
+    of the extension node to the body, i.e. [([%extension.EXTNAME] EXPR)].
 
     We provide one module per syntactic category (e.g., [Expression]), of module
     type [AST].  They also provide some simple machinery for working with the
@@ -43,7 +37,7 @@
     [match_extension] in the various AST modules; to construct one, we provide
     [make_extension] in the same places..  We still have to write the
     transformations in both directions for all new syntax, lowering it to
-    extension nodes and then (somewhat more obnoxiously) lifting it back out. *)
+    extension nodes and then lifting it back out. *)
 
 open Parsetree
 
@@ -146,7 +140,7 @@ let () =
     etc.). *)
 
 (** The parameters that define how to look for [[%extension.EXTNAME]] inside
-    ASTs of a certain syntactic category.  See also the [AST] functor, which
+    ASTs of a certain syntactic category.  See also the [Make_AST] functor, which
     uses these definitions to make the e.g. [Expression] module. *)
 module type AST_parameters = sig
   (** The AST type (e.g., [Parsetree.expression]) *)
@@ -217,7 +211,8 @@ let uniformly_handled_extension names =
 (** Given the [AST_parameters] for a syntactic category, produce the
     corresponding module, of type [AST], for lowering and lifting language
     extension syntax from and to it. *)
-module Make_AST (AST_parameters : AST_parameters) = struct
+module Make_AST (AST_parameters : AST_parameters) :
+    AST with type ast = AST_parameters.ast = struct
   include AST_parameters
 
   let make_extension ~loc names =
@@ -258,48 +253,32 @@ module Make_AST (AST_parameters : AST_parameters) = struct
 end
 
 (** Expressions; embedded as [([%extension.EXTNAME] BODY)]. *)
-module Expression = struct
-  module AST_parameters = struct
-    type ast = expression
-    type raw_body = Asttypes.arg_label * expression (* Function arguments *)
+module Expression = Make_AST(struct
+  type ast = expression
+  type raw_body = Asttypes.arg_label * expression (* Function arguments *)
 
-    let plural = "expressions"
+  let plural = "expressions"
 
-    let location expr = expr.pexp_loc
+  let location expr = expr.pexp_loc
 
-    let make_extension_node = Ast_helper.Exp.extension
+  let make_extension_node = Ast_helper.Exp.extension
 
-    let make_extension_use ~loc ~extension_node expr =
-      Ast_helper.Exp.apply ~loc extension_node [Nolabel, expr]
+  let make_extension_use ~loc ~extension_node expr =
+    Ast_helper.Exp.apply ~loc extension_node [Nolabel, expr]
 
-    let match_extension_use expr =
-      match expr.pexp_desc with
-      | Pexp_apply({pexp_desc = Pexp_extension ext; _}, arguments) ->
-         Some (ext, arguments)
-      | _ ->
-         None
+  let match_extension_use expr =
+    match expr.pexp_desc with
+    | Pexp_apply({pexp_desc = Pexp_extension ext; _}, arguments) ->
+       Some (ext, arguments)
+    | _ ->
+       None
 
-    let validate_extension_body = function
-      | Asttypes.Nolabel, body -> Some body
-      | _,                _    -> None
+  let validate_extension_body = function
+    | Asttypes.Nolabel, body -> Some body
+    | _,                _    -> None
 
-    let malformed_extension args = Wrong_arguments args
-  end
-
-  include Make_AST(AST_parameters)
-
-  module type Extension = sig
-    type expression
-    val extension_string : string
-    val expr_of : loc:Location.t -> expression -> Parsetree.expression
-  end
-
-  let make_extension_expr
-        (type expr)
-        (module Extension : Extension with type expression = expr)
-        ~loc (ext_expr : expr) =
-    make_extension ~loc [Extension.extension_string] (Extension.expr_of ~loc ext_expr)
-end
+  let malformed_extension args = Wrong_arguments args
+end)
 
 (** Patterns; embedded as [[%extension.EXTNAME], BODY]. *)
 module Pattern = Make_AST(struct
@@ -330,30 +309,27 @@ end)
 (** Generically lift and lower our custom language extension ASTs from/to OCaml
     ASTs. *)
 
-module type Translation = sig
+module type Of_ast_parameters = sig
   module AST : AST
-
   type t
-
-  val ast_of : loc:Location.t -> t -> AST.ast
   val of_ast_internal : Clflags.Extension.t -> AST.ast -> t option
 end
 
-module Make_of_ast (Translation : Translation) : sig
-  val of_ast : Translation.AST.ast -> Translation.t option
+module Make_of_ast (Params : Of_ast_parameters) : sig
+  val of_ast : Params.AST.ast -> Params.t option
 end = struct
   let of_ast ast =
-    let loc = Translation.AST.location ast in
+    let loc = Params.AST.location ast in
     let raise_error err = raise (Error (loc, err)) in
-    match Translation.AST.match_extension ast with
+    match Params.AST.match_extension ast with
     | None -> None
     | Some ([name], ast) -> begin
         match Clflags.Extension.of_string name with
         | Some ext -> begin
             assert_extension_enabled ~loc ext;
-            match Translation.of_ast_internal ext ast with
+            match Params.of_ast_internal ext ast with
             | Some ext_ast -> Some ext_ast
-            | None -> raise_error (Wrong_syntactic_category(ext, Translation.AST.plural))
+            | None -> raise_error (Wrong_syntactic_category(ext, Params.AST.plural))
           end
         | None -> raise_error (Unknown_extension name)
       end

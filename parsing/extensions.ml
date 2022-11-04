@@ -227,13 +227,34 @@ module Immutable_arrays = struct
     | _ -> failwith "Malformed immutable array expression"
 end
 
-(** We put our grouped ASTs in modules so that we can export them later;
-    however, we need to extend these modules later, so we have to give these
-    modules backup names, and we drop the [Ext] for export. *)
-
 (******************************************************************************)
-(** The interface to language extensions, which we export; at this point we're
-    willing to shadow the module (types) imported from [Extensions_parsing]. *)
+(** The interface to language extensions, which we export *)
+
+(* Note [Design of ast_of]
+   ~~~~~~~~~~~~~~~~~~~~~~~
+
+   It is tempting to refactor this to avoid mentioning the extension
+   twice. Attempts to do so have made the code worse, not better.
+
+   If we try to pass the extension module as a first-class module,
+   it needs to have a module type. We now have a choice:
+
+   1) Have one module type shared among syntactic categories. This
+      would require that each extension (e.g. Immutable_arrays) have
+      a shim module per syntactic category packing up the individual
+      pieces needed just for this one use case. Not so terrible,
+      but rather annoying to write. We can't just use [Immutable_arrays]
+      itself as the first-class module, because the Expression's ast_of
+      and Pattern's ast_of need different parts with different names.
+
+   2) Have different module types for different syntactic categories.
+      This complicates the AST definitions in Expressions_parsing,
+      but means we can pass e.g. [module Immutable_arrays] as the
+      first-class module here. Still, it requires annoying code
+      per syntactic category.
+
+   In the end, it seems easiest just to keep what we have here.
+*)
 
 module type AST = sig
   type t
@@ -245,17 +266,23 @@ end
 
 module Expression = struct
   module M = struct
-    module AST = Expression
+    module AST = Extensions_parsing.Expression
 
     type t =
       | Eexp_comprehension   of Comprehensions.expression
       | Eexp_immutable_array of Immutable_arrays.expression
 
+    (* See Note [Design of ast_of] *)
     let ast_of ~loc = function
       | Eexp_comprehension cexpr ->
-        Expression.make_extension_expr (module Comprehensions) ~loc cexpr
+        Expression.make_extension
+          ~loc
+          [Comprehensions.extension_string]
+          (Comprehensions.expr_of ~loc cexpr)
       | Eexp_immutable_array iaexpr ->
-        Expression.make_extension ~loc [Immutable_arrays.extension_string]
+        Expression.make_extension
+          ~loc
+          [Immutable_arrays.extension_string]
           (Immutable_arrays.expr_of ~loc iaexpr)
 
     let of_ast_internal (ext : Clflags.Extension.t) expr = match ext with
@@ -272,11 +299,12 @@ end
 
 module Pattern = struct
   module M = struct
-    module AST = Pattern
+    module AST = Extensions_parsing.Pattern
 
     type t =
       | Epat_immutable_array of Immutable_arrays.pattern
 
+    (* See Note [Design of ast_of] *)
     let ast_of ~loc = function
       | Epat_immutable_array iapat ->
         Pattern.make_extension ~loc [Immutable_arrays.extension_string]
