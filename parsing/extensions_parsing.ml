@@ -206,6 +206,15 @@ module type AST = sig
   val make_extension  : loc:Location.t -> string list -> ast -> ast
 
   val match_extension : ast -> (string list * ast) option
+
+  module type Builder = sig
+    type t
+    val extension_string : string
+    val ast_of : loc:Location.t -> t -> ast
+  end
+
+  val make_extension_ast : (module Builder with type t = 't) -> loc:Location.t -> 't -> ast
+
 end
 
 (* CR aspectorzabusky: I don't know exactly what to do with these. *)
@@ -255,6 +264,15 @@ module Make_AST (AST_parameters : AST_parameters) : AST with type ast = AST_para
         | _ -> None
       end
     | None -> None
+
+    module type Builder = sig
+      type t
+      val extension_string : string
+      val ast_of : loc:Location.t -> t -> ast
+    end
+
+    let make_extension_ast (type t) (module Ext : Builder with type t = t) ~loc (ext_ast : t) =
+      make_extension ~loc [Ext.extension_string] (Ext.ast_of ~loc ext_ast)
 end
 
 (** Expressions; embedded as [([%extension.EXTNAME] BODY)]. *)

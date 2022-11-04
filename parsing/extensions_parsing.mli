@@ -100,6 +100,14 @@ module type AST = sig
       way, raises an error; if the input isn't a language extension term,
       returns [None].  Partial inverse of [make_extension]. *)
   val match_extension : ast -> (string list * ast) option
+
+  module type Builder = sig
+    type t
+    val extension_string : string
+    val ast_of : loc:Location.t -> t -> ast
+  end
+
+  val make_extension_ast : (module Builder with type t = 't) -> loc:Location.t -> 't -> ast
 end
 
 (** One [AST] module per syntactic category we currently care about; we're

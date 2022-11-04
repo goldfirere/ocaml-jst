@@ -24,6 +24,8 @@ encounter it within the comprehensions code.
 
 (** List and array comprehensions *)
 module Comprehensions = struct
+  let extension_string = Clflags.Extension.to_string Comprehensions
+
   type iterator =
     | Range of { start     : expression
                ; stop      : expression
@@ -47,8 +49,6 @@ module Comprehensions = struct
   type comprehension_expr =
     | Cexp_list_comprehension  of comprehension
     | Cexp_array_comprehension of mutable_flag * comprehension
-
-  let extension_string = Clflags.Extension.to_string Comprehensions
 
   (* CR aspectorzabusky: new name? *)
   let comprehension_expr ~loc names =
@@ -198,6 +198,13 @@ module Comprehensions = struct
         Cexp_array_comprehension (Immutable, comprehension_of_expr comp)
     | bad, _ ->
         expand_comprehension_extension_expr_failure bad
+
+  module Expression_builder = struct
+    type t = comprehension_expr
+    type ast = expression
+    let extension_string = extension_string
+    let ast_of = expr_of_comprehension_expr
+  end
 end
 
 (** Immutable arrays *)
@@ -231,53 +238,6 @@ end
     however, we need to extend these modules later, so we have to give these
     modules backup names, and we drop the [Ext] for export. *)
 
-module Ext_expression (* : Translation *) = struct
-  (* We leave off the module signature so that t can be exported transparently,
-     to allow the `include` to work, below. *)
-
-  module AST = Expression
-
-  type t =
-    | Eexp_comprehension   of Comprehensions.comprehension_expr
-    | Eexp_immutable_array of Immutable_arrays.expression
-
-  let ast_of ~loc = function
-    | Eexp_comprehension cexpr ->
-      (* TODO: shave yak further? perhaps by passing Comprehensions as fcm *)
-      Expression.make_extension ~loc [Comprehensions.extension_string]
-        (Comprehensions.expr_of_comprehension_expr ~loc cexpr)
-    | Eexp_immutable_array iaexpr ->
-      Expression.make_extension ~loc [Immutable_arrays.extension_string]
-        (Immutable_arrays.expr_of ~loc iaexpr)
-
-  let of_ast_internal (ext : Clflags.Extension.t) expr = match ext with
-    | Comprehensions ->
-      Some (Eexp_comprehension (Comprehensions.comprehension_expr_of_expr expr))
-    | Immutable_arrays ->
-      Some (Eexp_immutable_array (Immutable_arrays.of_expr expr))
-    | _ -> None
-end
-
-module Ext_pattern (* : Translation *) = struct
-  (* We leave off the module signature so that t can be exported transparently,
-     to allow the `include` to work, below. *)
-
-  module AST = Pattern
-
-  type t =
-    | Epat_immutable_array of Immutable_arrays.pattern
-
-  let ast_of ~loc = function
-    | Epat_immutable_array iapat ->
-      Pattern.make_extension ~loc [Immutable_arrays.extension_string]
-        (Immutable_arrays.pat_of ~loc iapat)
-
-  let of_ast_internal (ext : Clflags.Extension.t) pat = match ext with
-    | Immutable_arrays ->
-      Some (Epat_immutable_array (Immutable_arrays.of_pat pat))
-    | _ -> None
-end
-
 (******************************************************************************)
 (** The interface to language extensions, which we export; at this point we're
     willing to shadow the module (types) imported from [Extensions_parsing]. *)
@@ -291,11 +251,50 @@ module type AST = sig
 end
 
 module Expression = struct
-  include Ext_expression
-  include Make_of_ast(Ext_expression)
+  module M = struct
+    module AST = Expression
+
+    type t =
+      | Eexp_comprehension   of Comprehensions.comprehension_expr
+      | Eexp_immutable_array of Immutable_arrays.expression
+
+    let ast_of ~loc = function
+      | Eexp_comprehension cexpr ->
+        Expression.make_extension_ast (module Comprehensions.Expression_builder)
+      | Eexp_immutable_array iaexpr ->
+        Expression.make_extension ~loc [Immutable_arrays.extension_string]
+          (Immutable_arrays.expr_of ~loc iaexpr)
+
+    let of_ast_internal (ext : Clflags.Extension.t) expr = match ext with
+      | Comprehensions ->
+        Some (Eexp_comprehension (Comprehensions.comprehension_expr_of_expr expr))
+      | Immutable_arrays ->
+        Some (Eexp_immutable_array (Immutable_arrays.of_expr expr))
+      | _ -> None
+  end
+
+  include M
+  include Make_of_ast(M)
 end
 
 module Pattern = struct
-  include Ext_pattern
-  include Make_of_ast(Ext_pattern)
+  module M = struct
+    module AST = Pattern
+
+    type t =
+      | Epat_immutable_array of Immutable_arrays.pattern
+
+    let ast_of ~loc = function
+      | Epat_immutable_array iapat ->
+        Pattern.make_extension ~loc [Immutable_arrays.extension_string]
+          (Immutable_arrays.pat_of ~loc iapat)
+
+    let of_ast_internal (ext : Clflags.Extension.t) pat = match ext with
+      | Immutable_arrays ->
+        Some (Epat_immutable_array (Immutable_arrays.of_pat pat))
+      | _ -> None
+  end
+
+  include M
+  include Make_of_ast(M)
 end
