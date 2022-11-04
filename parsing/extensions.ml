@@ -46,7 +46,7 @@ module Comprehensions = struct
     ; clauses : clause list
     }
 
-  type comprehension_expr =
+  type expression =
     | Cexp_list_comprehension  of comprehension
     | Cexp_array_comprehension of mutable_flag * comprehension
 
@@ -102,7 +102,7 @@ module Comprehensions = struct
          clauses
          (comprehension_expr ~loc ["body"] body))
 
-  let expr_of_comprehension_expr ~loc eexpr =
+  let expr_of ~loc eexpr =
     let ghost_loc = { loc with Location.loc_ghost = true } in
     let expr_of_comprehension_type type_ =
       expr_of_comprehension ~loc:ghost_loc ~type_
@@ -198,13 +198,6 @@ module Comprehensions = struct
         Cexp_array_comprehension (Immutable, comprehension_of_expr comp)
     | bad, _ ->
         expand_comprehension_extension_expr_failure bad
-
-  module Expression_builder = struct
-    type t = comprehension_expr
-    type ast = expression
-    let extension_string = extension_string
-    let ast_of = expr_of_comprehension_expr
-  end
 end
 
 (** Immutable arrays *)
@@ -255,12 +248,12 @@ module Expression = struct
     module AST = Expression
 
     type t =
-      | Eexp_comprehension   of Comprehensions.comprehension_expr
+      | Eexp_comprehension   of Comprehensions.expression
       | Eexp_immutable_array of Immutable_arrays.expression
 
     let ast_of ~loc = function
       | Eexp_comprehension cexpr ->
-        Expression.make_extension_ast (module Comprehensions.Expression_builder)
+        Expression.make_extension_expr (module Comprehensions) ~loc cexpr
       | Eexp_immutable_array iaexpr ->
         Expression.make_extension ~loc [Immutable_arrays.extension_string]
           (Immutable_arrays.expr_of ~loc iaexpr)

@@ -206,15 +206,6 @@ module type AST = sig
   val make_extension  : loc:Location.t -> string list -> ast -> ast
 
   val match_extension : ast -> (string list * ast) option
-
-  module type Builder = sig
-    type t
-    val extension_string : string
-    val ast_of : loc:Location.t -> t -> ast
-  end
-
-  val make_extension_ast : (module Builder with type t = 't) -> loc:Location.t -> 't -> ast
-
 end
 
 (* CR aspectorzabusky: I don't know exactly what to do with these. *)
@@ -226,7 +217,7 @@ let uniformly_handled_extension names =
 (** Given the [AST_parameters] for a syntactic category, produce the
     corresponding module, of type [AST], for lowering and lifting language
     extension syntax from and to it. *)
-module Make_AST (AST_parameters : AST_parameters) : AST with type ast = AST_parameters.ast = struct
+module Make_AST (AST_parameters : AST_parameters) = struct
   include AST_parameters
 
   let make_extension ~loc names =
@@ -264,44 +255,51 @@ module Make_AST (AST_parameters : AST_parameters) : AST with type ast = AST_para
         | _ -> None
       end
     | None -> None
-
-    module type Builder = sig
-      type t
-      val extension_string : string
-      val ast_of : loc:Location.t -> t -> ast
-    end
-
-    let make_extension_ast (type t) (module Ext : Builder with type t = t) ~loc (ext_ast : t) =
-      make_extension ~loc [Ext.extension_string] (Ext.ast_of ~loc ext_ast)
 end
 
 (** Expressions; embedded as [([%extension.EXTNAME] BODY)]. *)
-module Expression = Make_AST(struct
-  type ast = expression
-  type raw_body = Asttypes.arg_label * expression (* Function arguments *)
+module Expression = struct
+  module AST_parameters = struct
+    type ast = expression
+    type raw_body = Asttypes.arg_label * expression (* Function arguments *)
 
-  let plural = "expressions"
+    let plural = "expressions"
 
-  let location expr = expr.pexp_loc
+    let location expr = expr.pexp_loc
 
-  let make_extension_node = Ast_helper.Exp.extension
+    let make_extension_node = Ast_helper.Exp.extension
 
-  let make_extension_use ~loc ~extension_node expr =
-    Ast_helper.Exp.apply ~loc extension_node [Nolabel, expr]
+    let make_extension_use ~loc ~extension_node expr =
+      Ast_helper.Exp.apply ~loc extension_node [Nolabel, expr]
 
-  let match_extension_use expr =
-    match expr.pexp_desc with
-    | Pexp_apply({pexp_desc = Pexp_extension ext; _}, arguments) ->
-       Some (ext, arguments)
-    | _ ->
-       None
+    let match_extension_use expr =
+      match expr.pexp_desc with
+      | Pexp_apply({pexp_desc = Pexp_extension ext; _}, arguments) ->
+         Some (ext, arguments)
+      | _ ->
+         None
 
-  let validate_extension_body = function
-    | Asttypes.Nolabel, body -> Some body
-    | _,                _    -> None
+    let validate_extension_body = function
+      | Asttypes.Nolabel, body -> Some body
+      | _,                _    -> None
 
-  let malformed_extension args = Wrong_arguments args
-end)
+    let malformed_extension args = Wrong_arguments args
+  end
+
+  include Make_AST(AST_parameters)
+
+  module type Extension = sig
+    type expression
+    val extension_string : string
+    val expr_of : loc:Location.t -> expression -> Parsetree.expression
+  end
+
+  let make_extension_expr
+        (type expr)
+        (module Extension : Extension with type expression = expr)
+        ~loc (ext_expr : expr) =
+    make_extension ~loc [Extension.extension_string] (Extension.expr_of ~loc ext_expr)
+end
 
 (** Patterns; embedded as [[%extension.EXTNAME], BODY]. *)
 module Pattern = Make_AST(struct

@@ -49,7 +49,7 @@ module Comprehensions : sig
     ; clauses : clause list
     (** The clauses of the comprehension; must be nonempty *) }
 
-  type comprehension_expr =
+  type expression =
     | Cexp_list_comprehension  of comprehension
     (** [BODY ...CLAUSES...] *)
     | Cexp_array_comprehension of Asttypes.mutable_flag * comprehension
@@ -101,7 +101,7 @@ end
 (** Language extensions in expressions *)
 module Expression : sig
   type t =
-    | Eexp_comprehension   of Comprehensions.comprehension_expr
+    | Eexp_comprehension   of Comprehensions.expression
     | Eexp_immutable_array of Immutable_arrays.expression
 
   include AST with type t := t and type ast := Parsetree.expression
