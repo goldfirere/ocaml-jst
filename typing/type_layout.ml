@@ -45,11 +45,11 @@ end
 let of_layout_annotation annot ~default =
   match annot with
   | None -> default
-  | Some Builtin_attributes.Any         -> Any
-  | Some Builtin_attributes.Value       -> Sort Value
-  | Some Builtin_attributes.Void        -> Sort Void
-  | Some Builtin_attributes.Immediate64 -> Immediate64
-  | Some Builtin_attributes.Immediate   -> Immediate
+  | Some Asttypes.Any         -> Any
+  | Some Asttypes.Value       -> Sort Value
+  | Some Asttypes.Void        -> Sort Void
+  | Some Asttypes.Immediate64 -> Immediate64
+  | Some Asttypes.Immediate   -> Immediate
 
 let of_attributes ~default attrs =
   of_layout_annotation ~default (Builtin_attributes.layout attrs)

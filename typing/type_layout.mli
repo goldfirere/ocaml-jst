@@ -77,7 +77,7 @@ val sublayout : t -> t -> (t, Violation.t) result
 
 (** Translate a user layout annotation to a layout *)
 val of_layout_annotation :
-  Builtin_attributes.layout_annotation option -> default:t -> t
+  Asttypes.layout_annotation option -> default:t -> t
 
 (** Find a layout in attributes, defaulting to ~default *)
 val of_attributes : default:t -> Parsetree.attributes -> t
