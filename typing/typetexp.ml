@@ -631,6 +631,8 @@ and transl_type_aux env policy mode styp =
            }) ty
   | Ptyp_extension ext ->
       raise (Error_forward (Builtin_attributes.error_of_extension ext))
+  | Ptyp_layout (_inner_type, _layout) ->
+      assert false (* RAE XXX *)
 
 and transl_poly_type env policy mode t =
   transl_type env policy mode (Ast_helper.Typ.force_poly t)

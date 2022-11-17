@@ -3521,6 +3521,9 @@ atomic_type:
         { Ptyp_variant($3, Closed, Some $5) }
     | extension
         { Ptyp_extension $1 }
+    | LPAREN core_type COLON layout RPAREN
+        (* RAE XXX this is a bit gross, via Builtin_attributes.layout *)
+        { Ptyp_layout ($2, Builtin_attributes.layout [$4]) }
   )
   { $1 } /* end mktyp group */
 ;
