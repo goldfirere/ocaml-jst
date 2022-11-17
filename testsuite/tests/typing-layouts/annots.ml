@@ -2,6 +2,7 @@
    * expect
 *)
 
+(*
 type t_any : any
 type t_value : value
 type t_imm : immediate
@@ -15,7 +16,7 @@ type t_imm : immediate
 type t_imm64 : immediate64
 type t_void : void
 |}];;
-
+*)
 let x : (int : value) = 5
 let x : (int : immediate) = 5
 let x : (int : any) = 5
@@ -23,7 +24,7 @@ let x : (int : any) = 5
 [%%expect {|
 ??
 |}]
-
+(*
 let x : ((int : immediate) list : value) = [3;4;5]
 ;;
 [%%expect {|
@@ -177,3 +178,4 @@ let f : type (a : any). a -> a = fun x -> x
 [%%expect {|
 fail
 |}]
+*)

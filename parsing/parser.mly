@@ -659,13 +659,18 @@ let mk_directive ~loc name arg =
       pdir_loc = make_loc loc;
     }
 
-let check_layout loc id =
-  begin
-    match id with
-    | ("any" | "value" | "void" | "immediate64" | "immediate") -> ()
+(* returns both the translated layout and the string, because
+   the string is useful for building an Attribute *)
+let check_layout loc id : (Asttypes.layout_annotation * string) with_loc =
+  let layout_annotation = match id with
+    | "any" -> Any
+    | "value" -> Value
+    | "void" -> Void
+    | "immediate64" -> Immediate64
+    | "immediate" -> Immediate
     | _ -> expecting loc "layout"
-  end;
-  Attr.mk ~loc:Location.none (mknoloc id) (PStr [])
+  in
+  mkloc (layout_annotation, id) (make_loc loc)
 
 %}
 
@@ -3111,8 +3116,10 @@ layout:
 
 parenthesized_type_parameter:
     type_parameter { $1 }
-  | type_variance type_variable COLON layout
-      { {$2 with ptyp_attributes = [$4]}, $1 }
+  | type_variance type_variable COLON layout_annot=layout
+      { let loc = layout_annot.loc in
+        let attr = Attr.mk ~loc (mkloc (snd layout_annot.txt) loc) (PStr []) in
+        {$2 with ptyp_attributes = [attr]}, $1 }
 ;
 
 type_parameter:
@@ -3521,9 +3528,9 @@ atomic_type:
         { Ptyp_variant($3, Closed, Some $5) }
     | extension
         { Ptyp_extension $1 }
-    | LPAREN core_type COLON layout RPAREN
+    | LPAREN core_type COLON layout_annot=layout RPAREN
         (* RAE XXX this is a bit gross, via Builtin_attributes.layout *)
-        { Ptyp_layout ($2, Builtin_attributes.layout [$4]) }
+        { Ptyp_layout ($2, Location.map fst layout_annot) }
   )
   { $1 } /* end mktyp group */
 ;

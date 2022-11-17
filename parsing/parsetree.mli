@@ -147,11 +147,11 @@ and core_type_desc =
   | Ptyp_package of package_type
         (* (module S) *)
 
-      (* RAE XXX use extension instead *)
-  | Ptyp_layout of core_type * layout_annotation
-
   | Ptyp_extension of extension
         (* [%id] *)
+
+  (* RAE XXX use extension instead *)
+  | Ptyp_layout of core_type * layout_annotation loc
 
 and package_type = Longident.t loc * (Longident.t loc * core_type) list
       (*

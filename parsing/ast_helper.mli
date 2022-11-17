@@ -85,7 +85,7 @@ module Typ :
                  -> core_type
     val extension: ?loc:loc -> ?attrs:attrs -> extension -> core_type
     val layout: ?loc:loc -> ?attrs:attrs -> core_type
-                 -> Asttypes.layout_annotation -> core_type
+                 -> Asttypes.layout_annotation with_loc -> core_type
 
     val force_poly: core_type -> core_type
 
