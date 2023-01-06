@@ -2842,6 +2842,21 @@ let add_layout_equation env destination layout1 =
 
      This would break some existing programs, but probably only bad ones?
   *)
+  let is_instantiable env p =
+  (* CJC XXX test - why is the aliasable check there in the first place?
+
+     When we decide what to do, add bug21 or some smaller test case to the test
+     suite *)
+    try
+      let decl = Env.find_type p env in
+      decl_is_abstract decl &&
+      decl.type_private = Public &&
+      decl.type_arity = 0 &&
+      decl.type_manifest = None (* &&
+      not (non_aliasable p decl) *)
+    with Not_found -> false
+  in
+
   match intersect_type_layout !env destination layout1 with
   | Error err -> raise_for Unify (Bad_layout (destination,err))
   (* CJC XXX errors rethink for new error system *)
