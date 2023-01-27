@@ -287,8 +287,8 @@ module Iterator_bindings = struct
       right-hand side of an [in] iterator; this last binding is also always
       referenced multiple times.) *)
   type t =
-    | Range of { start     : Let_binding.t (* Always bound *)
-               ; stop      : Let_binding.t (* Always bound *)
+    | Range of { start     : Let_binding.(immutable t) (* Always bound *)
+               ; stop      : Let_binding.(immutable t) (* Always bound *)
                ; direction : direction_flag }
     (** The translation of [Typedtree.Texp_comp_range], an integer iterator
         ([... = ... (down)to ...]) *)

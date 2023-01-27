@@ -7,6 +7,13 @@ open Lambda
     collect these while translating array comprehension clauses and bind them
     later. *)
 module Let_binding : sig
+  (** Mutable variables are distinct from ordinary variables in that a mutable
+      variable can appear in an [Lassign]. We thus want to distinguish between
+      mutable let bindings from immutable ones. These type indices allow us to
+      keep this distinction via the magic of GADTs. *)
+  type mutable_ = |
+  type immutable = |
+
   (** Lambda distinguishes between binding forms that bind an immutable ([Llet])
       vs. mutable ([Lmutlet]) variable; however, we want to be able to abstract
       over these uniformly, as in some cases we will be collecting lists of
@@ -16,34 +23,43 @@ module Let_binding : sig
       of [let] we're generating. *)
   module Let_kind : sig
     (** What sort of variable are we binding? *)
-    type t =
-      | Immutable of let_kind
+    type _ t =
+      | Immutable : let_kind -> immutable t
       (** Bind an immutable variable of the specified [let_kind]; corresponds to
           [Llet]. *)
-      | Mutable
+      | Mutable : mutable_ t
       (** Bind a mutable variable; corresponds to [Lmutlet]. *)
   end
 
+  (** An abstract alias for [Ident.t]; kept abstract so that no one can
+      accidentally try to bind an immutable variable in an [Lassign]. *)
+  type ident
+
   (** The first-class (in OCaml) type of let bindings. *)
-  type t = private
-    { let_kind   : Let_kind.t
+  type 'mut t = private
+    { let_kind   : 'mut Let_kind.t
     ; value_kind : value_kind
-    ; id         : Ident.t
+    ; id         : ident
     ; init       : lambda   (* initial value *)
     ; occur      : lambda   (* occurrence of this variable *)
     }
 
   (** Create a fresh local identifier (with name as given by the string
       argument) to bind to an initial value given by the lambda argument. *)
-  val make : Let_kind.t -> value_kind -> string -> lambda -> t
+  val make : 'mut Let_kind.t -> value_kind -> string -> lambda -> 'mut t
+
+  (** Produce a lambda-term to assign a new value to a mutable variable.
+      The fact that this type has [mutable_] is the raison d'être of the
+      whole [mutable_]/[immutable] setup. *)
+  val assign : mutable_ t -> lambda -> lambda
 
   (** Create a Lambda let-binding (with [Llet]) from a first-class let
       binding, providing the body. *)
-  val let_one : t -> lambda -> lambda
+  val let_one : _ t -> lambda -> lambda
 
   (** Create Lambda let-bindings (with [Llet]) from multiple first-class let
       bindings, providing the body. *)
-  val let_all : t list -> lambda -> lambda
+  val let_all : 'mut t list -> lambda -> lambda
 end
 
 (** Convenience functions for working with the Lambda AST *)

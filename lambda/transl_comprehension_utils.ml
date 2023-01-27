@@ -1,20 +1,25 @@
 open Lambda
 
 module Let_binding = struct
+  type mutable_ = |
+  type immutable = |
+
   module Let_kind = struct
-    type t =
-      | Immutable of let_kind
-      | Mutable
+    type _ t =
+      | Immutable : let_kind -> immutable t
+      | Mutable : mutable_ t
   end
 
-  type t =
-    { let_kind   : Let_kind.t
+  type ident = Ident.t
+
+  type 'mut t =
+    { let_kind   : 'mut Let_kind.t
     ; value_kind : value_kind
-    ; id         : Ident.t
+    ; id         : ident
     ; init       : lambda
     ; occur      : lambda }
 
-  let make (let_kind : Let_kind.t) value_kind name init =
+  let make (type mut) (let_kind : mut Let_kind.t) value_kind name init =
     let id = Ident.create_local name in
     let occur = match let_kind with
       | Mutable -> Lmutvar id
@@ -22,12 +27,15 @@ module Let_binding = struct
     in
     {let_kind; value_kind; id; init; occur}
 
-  let let_one {let_kind; value_kind; id; init} body =
+  let assign { id; _ } new_value =
+    Lassign(id, new_value)
+
+  let let_one (type mut) ({let_kind; value_kind; id; init} : mut t) body =
     match let_kind with
     | Immutable let_kind -> Llet(let_kind, value_kind, id, init, body)
     | Mutable            -> Lmutlet(value_kind, id, init, body)
 
-  let let_all = List.fold_right let_one
+  let let_all vars body = List.fold_right let_one vars body
 end
 
 module Lambda_utils = struct
