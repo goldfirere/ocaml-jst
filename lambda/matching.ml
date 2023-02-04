@@ -1761,7 +1761,7 @@ let get_pat_args_constr p rem =
     args @ rem
   | { pat_desc = Tpat_construct (_, {cstr_arg_layouts}, args, _) } ->
     (List.filteri (fun i _ ->
-       not (Type_layout.Const.can_make_void cstr_arg_layouts.(i)))
+       not (Layout.can_make_void cstr_arg_layouts.(i)))
        args) @ rem
   | _ -> assert false
 
@@ -1777,7 +1777,7 @@ let get_expr_args_constr ~scopes head (arg, _mut) rem =
       if src_pos > last_pos then
         argl
       else if
-        Type_layout.Const.(can_make_void cstr.cstr_arg_layouts.(src_pos))
+        Layout.can_make_void cstr.cstr_arg_layouts.(src_pos)
       then
         make_args (src_pos + 1) runtime_pos
       else
@@ -2840,7 +2840,7 @@ let split_extension_cases tag_lambda_list =
     | ({cstr_arg_layouts; cstr_tag}, act) :: rem -> (
         let consts, nonconsts = split_rec rem in
         let all_void =
-          Array.for_all Type_layout.Const.can_make_void cstr_arg_layouts
+          Array.for_all Layout.can_make_void cstr_arg_layouts
         in
         match all_void, cstr_tag with
         | true, Extension (path,_) -> ((path,act) :: consts, nonconsts)
@@ -3775,7 +3775,7 @@ let for_let ~scopes loc param_void_k param param_sort pat body_kind body =
         let ids_with_kinds =
           List.filter_map
             (fun (id, _, typ, sort) ->
-               if Type_layout.Const.can_make_void (Sort sort)
+               if Layout.can_make_void (Layout.of_sort sort)
                then None
                else Some (id, Typeopt.value_kind pat.pat_env typ))
             catch_ids

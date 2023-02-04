@@ -169,7 +169,7 @@ let bigarray_type_kind_and_layout env typ =
       (Pbigarray_unknown, Pbigarray_unknown_layout)
 
 let value_kind_of_value_layout layout =
-  match Type_layout.Const.constrain_default_void layout with
+  match Layout.constrain_default_void layout with
   | Value -> Pgenval
   | Immediate -> Pintval
   | Immediate64 ->
@@ -186,7 +186,7 @@ let rec value_kind env ~visited ~depth ~num_nodes_visited ty
     || num_nodes_visited >= 30
   in
   (* CJC XXX remove this check once all of jane builds *)
-  begin match Ctype.(check_type_layout env (correct_levels ty) Type_layout.void) with
+  begin match Ctype.(check_type_layout env (correct_levels ty) Layout.void) with
   | Ok _ -> assert false
   | _ -> ()
   end;
@@ -213,7 +213,7 @@ let rec value_kind env ~visited ~depth ~num_nodes_visited ty
       let kind = (Env.find_type p env).type_kind in
       if cannot_proceed () then
         num_nodes_visited,
-        value_kind_of_value_layout (Type_layout.layout_bound_of_kind kind)
+        value_kind_of_value_layout (layout_bound_of_kind kind)
       else
         let visited = Numbers.Int.Set.add (get_id ty) visited in
         match kind with
@@ -256,7 +256,7 @@ let rec value_kind env ~visited ~depth ~num_nodes_visited ty
     (* CJC XXX this was missing - only caught in 4.14 merge.  Am I missing other
        cases. *)
     num_nodes_visited,
-    if Result.is_ok (Ctype.check_type_layout env scty Type_layout.immediate)
+    if Result.is_ok (Ctype.check_type_layout env scty Layout.immediate)
     then Pintval else Pgenval
   | _ ->
     num_nodes_visited, Pgenval
@@ -283,7 +283,7 @@ and value_kind_variant env ~visited ~depth ~num_nodes_visited
           List.fold_left
             (fun (num_nodes_visited, idx, kinds) (ty,_) ->
                let num_nodes_visited = num_nodes_visited + 1 in
-               if Type_layout.equal layouts.(idx) Type_layout.void then
+               if Layout.equate layouts.(idx) Layout.void then
                  (num_nodes_visited, idx+1, kinds)
                else
                  let num_nodes_visited, kind =
@@ -300,7 +300,7 @@ and value_kind_variant env ~visited ~depth ~num_nodes_visited
               (label:Types.label_declaration) ->
               let num_nodes_visited = num_nodes_visited + 1 in
               let num_nodes_visited, kinds, field_mutable =
-                if Type_layout.(equal void label.ld_layout)
+                if Layout.(equate void label.ld_layout)
                 then (num_nodes_visited, kinds, Asttypes.Immutable)
                 else
                   let (num_nodes_visited, kind) =
@@ -369,7 +369,7 @@ and value_kind_record env ~visited ~depth ~num_nodes_visited
             (label:Types.label_declaration) ->
             let num_nodes_visited = num_nodes_visited + 1 in
             let num_nodes_visited, kinds, field_mutable =
-              if Type_layout.(equal void label.ld_layout) then
+              if Layout.(equate void label.ld_layout) then
                 (num_nodes_visited, kinds, Asttypes.Immutable)
               else
                 let (num_nodes_visited, kind) =

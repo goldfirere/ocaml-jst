@@ -523,7 +523,7 @@ and raw_type_list tl = raw_list raw_type tl
 and raw_type_desc ppf = function
     Tvar { name; layout } ->
       fprintf ppf "Tvar (@,%a,@,%s)" print_name name
-        (Type_layout.to_string layout)
+        (Layout.to_string layout)
   | Tarrow((l,arg,ret),t1,t2,c) ->
       fprintf ppf "@[<hov1>Tarrow((\"%s\",%a,%a),@,%a,@,%a,@,%s)@]"
         (string_of_label l) Alloc_mode.print arg Alloc_mode.print ret
@@ -552,7 +552,7 @@ and raw_type_desc ppf = function
       fprintf ppf "@[<1>Tsubst@,(%a,@ Some%a)@]" raw_type t raw_type t'
   | Tunivar { name; layout } ->
       fprintf ppf "Tunivar (@,%a,@,%s)" print_name name
-        (Type_layout.to_string layout)
+        (Layout.to_string layout)
   | Tpoly (t, tl) ->
       fprintf ppf "@[<hov1>Tpoly(@,%a,@,%a)@]"
         raw_type t
@@ -1464,12 +1464,12 @@ let rec tree_of_type_decl id decl =
   in
   let (name, args) = type_defined decl in
   let constraints = tree_of_constraints params in
-  let olayout_of_layout = function
-    | Builtin_attributes.Any -> Olay_any
-    | Builtin_attributes.Value -> Olay_value
-    | Builtin_attributes.Void -> Olay_void
-    | Builtin_attributes.Immediate64 -> Olay_immediate64
-    | Builtin_attributes.Immediate -> Olay_immediate
+  let olayout_of_layout = Layout.(function
+    | Any -> Olay_any
+    | Value -> Olay_value
+    | Void -> Olay_void
+    | Immediate64 -> Olay_immediate64
+    | Immediate -> Olay_immediate)
   in
   let lay =
     Option.map olayout_of_layout
@@ -2203,7 +2203,7 @@ let hide_variant_name t =
       newty2 ~level:(get_level t)
         (Tvariant
            (create_row ~fields ~fixed ~closed ~name:None
-              ~more:(newvar2 (get_level more) Type_layout.value)))
+              ~more:(newvar2 (get_level more) Layout.value)))
   | _ -> t
 
 let prepare_expansion Errortrace.{ty; expanded} =
@@ -2406,18 +2406,18 @@ let explanation (type variety) intro prev env
     end
   | Errortrace.Bad_layout (t,e) ->
       Some (dprintf "@ @[<hov>%a@]"
-              (Type_layout.Violation.report_with_offender
+              (Layout.Violation.report_with_offender
                  ~offender:(fun ppf -> type_expr ppf t)) e)
   | Errortrace.Bad_layout_sort (t,e) ->
       Some (dprintf "@ @[<hov>%a@]"
-              (Type_layout.Violation.report_with_offender_sort
+              (Layout.Violation.report_with_offender_sort
                  ~offender:(fun ppf -> type_expr ppf t)) e)
   | Errortrace.Unequal_univar_layouts (t1,l1,t2,l2) ->
       Some (dprintf "@,@[<hov>Universal variables %a and %a should be equal, \
                      but@ the former has layout %s,@ and the latter has \
                      layout %s@]"
               type_expr t1 type_expr t2
-              (Type_layout.to_string l1) (Type_layout.to_string l2))
+              (Layout.to_string l1) (Layout.to_string l2))
 
 let mismatch intro env trace =
   Errortrace.explain trace (fun ~prev h -> explanation intro prev env h)

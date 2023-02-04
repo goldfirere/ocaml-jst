@@ -107,7 +107,7 @@ type type_mismatch =
   | Variant_mismatch of variant_change list
   | Unboxed_representation of position
   | Extensible_representation of position
-  | Layout of Type_layout.Violation.t
+  | Layout of Layout.Violation.t
 
 val value_descriptions:
   loc:Location.t -> Env.t -> string ->

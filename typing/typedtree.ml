@@ -565,7 +565,7 @@ and type_declaration =
     typ_manifest: core_type option;
     typ_loc: Location.t;
     typ_attributes: attribute list;
-    typ_layout_annotation: Builtin_attributes.layout_annotation option;
+    typ_layout_annotation: Builtin_attributes.const_layout option;
    }
 
 and type_kind =
@@ -861,21 +861,21 @@ let iter_pattern_full ~both_sides_of_or f sort pat =
             match cstr.cstr_repr with
             | Variant_unboxed _ -> [ sort ]
             | Variant_boxed _ | Variant_extensible ->
-              Array.to_list (Array.map Type_layout.sort_of_layout
+              Array.to_list (Array.map Layout.sort_of_layout
                                           cstr.cstr_arg_layouts)
           in
           List.iter2 (loop f) sorts patl
       | Tpat_record (lbl_pat_list, _) ->
           List.iter (fun (_, lbl, pat) ->
-            (loop f) (Type_layout.sort_of_layout lbl.lbl_layout) pat)
+            (loop f) (Layout.sort_of_layout lbl.lbl_layout) pat)
             lbl_pat_list
       (* Cases where the inner things must be value: *)
-      | Tpat_variant (_, pat, _) -> Option.iter (loop f Types.Value) pat
-      | Tpat_tuple patl -> List.iter (loop f Types.Value) patl
+      | Tpat_variant (_, pat, _) -> Option.iter (loop f Sort.value) pat
+      | Tpat_tuple patl -> List.iter (loop f Sort.value) patl
         (* CR ccasinghino: tuple case to change when we allow non-values in
            tuples *)
-      | Tpat_array patl -> List.iter (loop f Types.Value) patl
-      | Tpat_lazy p | Tpat_exception p -> loop f Types.Value p
+      | Tpat_array patl -> List.iter (loop f Sort.value) patl
+      | Tpat_lazy p | Tpat_exception p -> loop f Sort.value p
       (* Cases without variables: *)
       | Tpat_any | Tpat_constant _ -> ()
   in
@@ -901,9 +901,9 @@ let pat_bound_idents_full sort pat =
 (* In these two, we don't know the sort, but the sort information isn't used so
    it's fine to lie. *)
 let pat_bound_idents_with_types pat =
-  rev_only_idents_and_types (rev_pat_bound_idents_full Value pat)
+  rev_only_idents_and_types (rev_pat_bound_idents_full Sort.value pat)
 let pat_bound_idents pat =
-  rev_only_idents (rev_pat_bound_idents_full Value pat)
+  rev_only_idents (rev_pat_bound_idents_full Sort.value pat)
 
 let rev_let_bound_idents bindings =
   let idents = ref [] in

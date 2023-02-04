@@ -388,7 +388,7 @@ let warn_on_literal_pattern attrs =
 let explicit_arity attrs =
   has_attribute ["ocaml.explicit_arity"; "explicit_arity"] attrs
 
-type layout_annotation =
+type const_layout =
   | Any
   | Value
   | Void

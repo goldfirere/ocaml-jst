@@ -56,10 +56,10 @@ val create_scope : unit -> int
 
 val newty: type_desc -> type_expr
 val new_scoped_ty: int -> type_desc -> type_expr
-val newvar: ?name:string -> Type_layout.t -> type_expr
-val newvar2: ?name:string -> int -> Type_layout.t -> type_expr
+val newvar: ?name:string -> layout -> type_expr
+val newvar2: ?name:string -> int -> layout -> type_expr
         (* Return a fresh variable *)
-val new_global_var: ?name:string -> Type_layout.t -> type_expr
+val new_global_var: ?name:string -> layout -> type_expr
         (* Return a fresh variable, bound at toplevel
            (as type variables ['a] in type constraints). *)
 val newobj: type_expr -> type_expr
@@ -151,7 +151,7 @@ val instance_list: type_expr list -> type_expr list
         (* Take an instance of a list of type schemes *)
 val new_local_type:
         ?loc:Location.t -> ?manifest_and_scope:(type_expr * int) ->
-        Type_layout.t -> type_declaration
+        layout -> type_declaration
 val existential_name: constructor_description -> type_expr -> string
 val instance_constructor:
         ?in_pattern:Env.t ref * int ->
@@ -238,7 +238,7 @@ val unify_var: Env.t -> type_expr -> type_expr -> unit
         (* Same as [unify], but allow free univars when first type
            is a variable. *)
 val unify_delaying_layout_checks :
-  Env.t -> type_expr -> type_expr -> (type_expr * Type_layout.t) list
+  Env.t -> type_expr -> type_expr -> (type_expr * layout) list
         (* Same as [unify], but don't check layout compatibility.  Instead,
            return the checks that would have been performed.  For use in
            typedecl before well-foundedness checks have made layout checking
@@ -302,7 +302,7 @@ type filter_method_failure =
   | Unification_error of Errortrace.unification_error
   | Not_a_method
   | Not_an_object of type_expr
-  | Not_a_value of Type_layout.Violation.t
+  | Not_a_value of Layout.Violation.t
 
 exception Filter_method_failed of filter_method_failure
 
@@ -468,21 +468,21 @@ val get_unboxed_type_representation : Env.t -> type_expr -> type_expr
 
 (* Cheap upper bound on layout.  Will not expand unboxed types - call
    [type_layout] if that's needed. *)
-val estimate_type_layout : Env.t ->  type_expr -> Type_layout.t
-val type_layout : Env.t -> type_expr -> Type_layout.t
+val estimate_type_layout : Env.t ->  type_expr -> layout
+val type_layout : Env.t -> type_expr -> layout
 
 (* Find a type's sort (constraining it to be an arbitrary sort variable, if
    needed) *)
-val type_sort : Env.t -> type_expr -> (sort, Type_layout.Violation.t) result
+val type_sort : Env.t -> type_expr -> (sort, Layout.Violation.t) result
 
 (* Layout checking.  For convenience, on success these functions return the most
    precise layout we found for the given type during checking (which may be an
    upper bound). *)
 (* CJC XXX errors: probably changes these to raise on error, like unify, when we
    work on errors *)
-val check_decl_layout : Env.t -> type_declaration -> Type_layout.t
-  -> (Type_layout.t, Type_layout.Violation.t) result
-val check_type_layout : Env.t -> type_expr -> Type_layout.t
-  -> (Type_layout.t, Type_layout.Violation.t) result
-val constrain_type_layout : Env.t -> type_expr -> Type_layout.t
-  -> (Type_layout.t, Type_layout.Violation.t) result
+val check_decl_layout : Env.t -> type_declaration -> layout
+  -> (layout, Layout.Violation.t) result
+val check_type_layout : Env.t -> type_expr -> layout
+  -> (layout, Layout.Violation.t) result
+val constrain_type_layout : Env.t -> type_expr -> layout
+  -> (layout, Layout.Violation.t) result

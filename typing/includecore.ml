@@ -229,7 +229,7 @@ type type_mismatch =
   | Variant_mismatch of variant_change list
   | Unboxed_representation of position
   | Extensible_representation of position
-  | Layout of Type_layout.Violation.t
+  | Layout of Layout.Violation.t
 
 let report_locality_mismatch first second ppf err =
   let {order; nonlocal} = err in
@@ -484,7 +484,7 @@ let report_type_mismatch first second decl env ppf err =
          (choose ord first second) decl
          "is extensible"
   | Layout v ->
-      Type_layout.Violation.report_with_name ~name:first ppf v
+      Layout.Violation.report_with_name ~name:first ppf v
 
 let compare_global_flags flag0 flag1 =
   match flag0, flag1 with
