@@ -2542,14 +2542,38 @@ let non_aliasable p decl =
   (* in_pervasives p ||  (subsumed by in_current_module) *)
   in_current_module p && not decl.type_is_newtype
 
-let is_instantiable env p =
+(* This checks whether a gadt equation can be added for a type.
+
+   The `for_layout_eqn` parameter indicates whether this is an equation that
+   just modifies a layout, or a normal gadt equation (see add_layout_equation).
+
+   In the layout case, we don't check that the type is not non_aliasable.  The
+   non_aliasable check serves two purposes for gadt equations, neither of which
+   is needed in the layout case:
+
+   1) It restricts gadt equations for abstract types defined in the current
+   module.  This is actually unnecessary even for normal gadt equations and may
+   change in the future (see upstream PR 8900).
+
+   2) It restricts gadt equations on pervasives, which a hacky implementation of
+   the fact that every type in the initial environment is incompatible with
+   every other type.  But its fine to refine the layout of these types (and we
+   want to in some cases, like giving int32 the layout immediate64 on
+   appropriate platforms).
+
+   CR layouts: the non_aliasable check could really be combined with the
+   decl_is_abstract check, and both could be guarded by ~for_layout_eqn, allowing
+   the refinement of layouts of data types.  Write some tests cases and make
+   that change.
+*)
+let is_instantiable env ~for_layout_eqn p =
   try
     let decl = Env.find_type p env in
     decl_is_abstract decl &&
     decl.type_private = Public &&
     decl.type_arity = 0 &&
     decl.type_manifest = None &&
-    not (non_aliasable p decl)
+    (for_layout_eqn || not (non_aliasable p decl))
   with Not_found -> false
 
 
@@ -2854,38 +2878,24 @@ let add_layout_equation env destination layout1 =
 
      This would break some existing programs, but probably only bad ones?
   *)
-  let is_instantiable env p =
-  (* CJC XXX test - why is the aliasable check there in the first place?
-
-     When we decide what to do, add bug21 or some smaller test case to the test
-     suite *)
-    try
-      let decl = Env.find_type p env in
-      decl_is_abstract decl &&
-      decl.type_private = Public &&
-      decl.type_arity = 0 &&
-      decl.type_manifest = None (* &&
-      not (non_aliasable p decl) *)
-    with Not_found -> false
-  in
-
   match intersect_type_layout !env destination layout1 with
   | Error err -> raise_for Unify (Bad_layout (destination,err))
   (* CJC XXX errors rethink for new error system *)
   | Ok layout -> begin
       match get_desc destination with
-      | Tconstr (p, _, _) when is_instantiable !env p -> begin
-        try
-          let decl = Env.find_type p !env in
-          match decl.type_kind with
-          | Type_abstract {layout=layout'} when
-              not (Layout.equate layout layout') ->
-            let decl = {decl with type_kind = Type_abstract {layout}} in
-            env := Env.add_local_type p decl !env
-          | (Type_record _ | Type_variant _ | Type_open | Type_abstract _) -> ()
-        with
-          Not_found -> ()
-      end
+      | Tconstr (p, _, _) when is_instantiable ~for_layout_eqn:true !env p ->
+        begin
+          try
+            let decl = Env.find_type p !env in
+            match decl.type_kind with
+            | Type_abstract {layout=layout'} when
+                not (Layout.equate layout layout') ->
+              let decl = {decl with type_kind = Type_abstract {layout}} in
+              env := Env.add_local_type p decl !env
+            | (Type_record _ | Type_variant _ | Type_open | Type_abstract _) -> ()
+          with
+            Not_found -> ()
+        end
       | _ -> ()
     end
 
@@ -3241,8 +3251,9 @@ and unify3 env t1 t1' t2 t2' =
               inj (List.combine tl1 tl2)
       | (Tconstr (path,[],_),
          Tconstr (path',[],_))
-        when is_instantiable !env path && is_instantiable !env path'
-        && can_generate_equations () ->
+        when is_instantiable !env ~for_layout_eqn:false path
+          && is_instantiable !env ~for_layout_eqn:false path'
+          && can_generate_equations () ->
           let source, destination =
             if Path.scope path > Path.scope path'
             then  path , t2'
@@ -3251,12 +3262,14 @@ and unify3 env t1 t1' t2 t2' =
           record_equation t1' t2';
           add_gadt_equation env source destination
       | (Tconstr (path,[],_), _)
-        when is_instantiable !env path && can_generate_equations () ->
+        when is_instantiable !env ~for_layout_eqn:false path
+          && can_generate_equations () ->
           reify env t2';
           record_equation t1' t2';
           add_gadt_equation env path t2'
       | (_, Tconstr (path,[],_))
-        when is_instantiable !env path && can_generate_equations () ->
+        when is_instantiable !env ~for_layout_eqn:false path
+          && can_generate_equations () ->
           reify env t1';
           record_equation t1' t2';
           add_gadt_equation env path t1'
