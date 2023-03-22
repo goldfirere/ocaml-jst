@@ -15,7 +15,6 @@
 
 (* Typing of type definitions and primitive definitions *)
 
-open Layouts
 open Types
 open Format
 
@@ -48,7 +47,7 @@ val transl_with_constraint:
     Typedtree.type_declaration
 
 val abstract_type_decl:
-    injective:bool -> layout -> layout list -> type_declaration
+    injective:bool -> Kkind.t -> Kkind.t list -> type_declaration
 val approx_type_decl:
     Parsetree.type_declaration list ->
                                   (Ident.t * type_declaration) list
@@ -62,7 +61,7 @@ val is_fixed_type : Parsetree.type_declaration -> bool
 
 type native_repr_kind = Unboxed | Untagged
 
-type layout_sort_loc = Cstr_tuple | Record
+type kkind_sort_loc = Cstr_tuple | Record
 
 type error =
     Repeated_parameter
@@ -98,10 +97,10 @@ type error =
   | Multiple_native_repr_attributes
   | Cannot_unbox_or_untag_type of native_repr_kind
   | Deep_unbox_or_untag_attribute of native_repr_kind
-  | Layout of Layout.Violation.t
-  | Layout_sort of
-      {lloc : layout_sort_loc; typ : type_expr; err : Layout.Violation.t}
-  | Layout_empty_record
+  | Kkind of Kkind.Violation.t
+  | Kkind_sort of
+      {lloc : kkind_sort_loc; typ : type_expr; err : Kkind.Violation.t}
+  | Kkind_empty_record
   | Separability of Typedecl_separability.error
   | Bad_unboxed_attribute of string
   | Boxed_and_unboxed

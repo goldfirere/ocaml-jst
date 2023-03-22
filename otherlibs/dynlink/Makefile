@@ -103,7 +103,7 @@ COMPILERLIBS_SOURCES=\
   typing/path.ml \
   typing/primitive.ml \
   typing/shape.ml \
-  typing/layouts.ml \
+  typing/kkind.ml \
   typing/types.ml \
   typing/btype.ml \
   typing/subst.ml \

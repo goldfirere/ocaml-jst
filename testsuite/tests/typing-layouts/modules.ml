@@ -9,7 +9,7 @@ type t_imm64 [@@immediate64]
 type t_void  [@@void];;
 
 
-(* Test 1: Simple with type constraints respect layouts. *)
+(* Test 1: Simple with type constraints respect kkinds. *)
 module type S1 = sig
   type 'a [@void] t
   type s
@@ -218,7 +218,7 @@ Error: This type ('a : void) should be an instance of type ('b : value)
 
 (* One downside of the current approach - this could be allowed, but isn't.  You
    need to annotate types declared in recursive modules if they need to have
-   layouts other than value, even if it's obvious from the manifest *)
+   kkinds other than value, even if it's obvious from the manifest *)
 type t3 [@@void]
 
 module rec Foo3 : sig

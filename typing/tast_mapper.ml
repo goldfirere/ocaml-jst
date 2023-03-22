@@ -119,8 +119,8 @@ let structure_item sub {str_desc; str_loc; str_env} =
   let str_env = sub.env sub str_env in
   let str_desc =
     match str_desc with
-    | Tstr_eval (exp, layout, attrs) ->
-        Tstr_eval (sub.expr sub exp, layout, attrs)
+    | Tstr_eval (exp, kkind, attrs) ->
+        Tstr_eval (sub.expr sub exp, kkind, attrs)
     | Tstr_value (rec_flag, list) ->
         let (rec_flag, list) = sub.value_bindings sub (rec_flag, list) in
         Tstr_value (rec_flag, list)
@@ -337,10 +337,10 @@ let expr sub x =
           sub.expr sub exp2,
           Option.map (sub.expr sub) expo
         )
-    | Texp_sequence (exp1, layout, exp2) ->
+    | Texp_sequence (exp1, kkind, exp2) ->
         Texp_sequence (
           sub.expr sub exp1,
-          layout,
+          kkind,
           sub.expr sub exp2
         )
     | Texp_while wh ->

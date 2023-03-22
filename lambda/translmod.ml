@@ -18,7 +18,6 @@
 
 open Misc
 open Asttypes
-open Layouts
 open Types
 open Typedtree
 open Lambda
@@ -657,11 +656,11 @@ and transl_structure ~scopes loc fields cc rootpath final_env = function
       size
   | item :: rem ->
       match item.str_desc with
-      | Tstr_eval (expr, layout, _) ->
+      | Tstr_eval (expr, kkind, _) ->
           let body, size =
             transl_structure ~scopes loc fields cc rootpath final_env rem
           in
-          if Layout.can_make_void layout then
+          if Kkind.can_make_void kkind then
             catch_void (fun void_k -> transl_exp ~scopes void_k expr)
               body Pgenval,
             size
@@ -1107,9 +1106,9 @@ let transl_store_structure ~scopes glob map prims aliases str =
       Lambda.subst no_env_update subst cont
     | item :: rem ->
         match item.str_desc with
-        | Tstr_eval (expr, layout,  _attrs) ->
+        | Tstr_eval (expr, kkind,  _attrs) ->
             let body = transl_store ~scopes rootpath subst cont rem in
-            if Layout.can_make_void layout then
+            if Kkind.can_make_void kkind then
               catch_void
                 (fun void_k -> Lambda.subst no_env_update subst
                                  (transl_exp ~scopes void_k expr))
@@ -1512,9 +1511,9 @@ let transl_store_gen ~scopes module_name ({ str_items = str }, restr) topl =
   let f str =
     let expr =
       match str with
-      | [ { str_desc = Tstr_eval (expr, layout, _attrs) } ] when topl ->
+      | [ { str_desc = Tstr_eval (expr, kkind, _attrs) } ] when topl ->
         assert (size = 0);
-        if Layout.can_make_void layout then
+        if Kkind.can_make_void kkind then
           catch_void (fun void_k ->
             Lambda.subst (fun _ _ env -> env) !transl_store_subst
               (transl_exp ~scopes void_k expr))
@@ -1607,19 +1606,19 @@ let close_toplevel_term (lam, ()) =
 
 let transl_toplevel_item ~scopes item =
   match item.str_desc with
-  | Tstr_eval (expr, layout, _) ->
+  | Tstr_eval (expr, kkind, _) ->
       (* This and the next case are special compilation for toplevel "let _ =
          expr", so that Toploop can display the result of the expression.
          Otherwise, the normal compilation would result in a Lsequence returning
          unit. *)
-      if Layout.can_make_void layout then
+      if Kkind.can_make_void kkind then
         catch_void (fun void_k -> transl_exp ~scopes void_k expr)
           lambda_unit Pintval
       else transl_exp ~scopes Not_void expr
   | Tstr_value(Nonrecursive,
                [{vb_pat = {pat_desc=Tpat_any}; vb_sort = sort;
                  vb_expr = expr}]) ->
-      if Layout.can_make_void (Layout.of_sort sort) then
+      if Kkind.can_make_void (Kkind.of_sort sort) then
         catch_void (fun void_k -> transl_exp ~scopes void_k expr)
           lambda_unit Pintval
       else

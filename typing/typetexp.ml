@@ -21,7 +21,6 @@ open Asttypes
 open Misc
 open Parsetree
 open Typedtree
-open Layouts
 open Types
 open Ctype
 
@@ -53,7 +52,7 @@ type error =
   | Unsupported_extension of Clflags.Extension.t
   | Polymorphic_optional_param
   | Non_value of
-      {vloc : value_loc; typ : type_expr; err : Layout.Violation.t}
+      {vloc : value_loc; typ : type_expr; err : Kkind.Violation.t}
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
@@ -122,10 +121,10 @@ let validate_name = function
   | Some name as s ->
       if name <> "" && strict_ident name.[0] then s else None
 
-let new_global_var ?name layout =
-  new_global_var ?name:(validate_name name) layout
-let newvar ?name layout =
-  newvar ?name:(validate_name name) layout
+let new_global_var ?name kkind =
+  new_global_var ?name:(validate_name name) kkind
+let newvar ?name kkind =
+  newvar ?name:(validate_name name) kkind
 
 let type_variable loc name =
   try
@@ -136,15 +135,15 @@ let type_variable loc name =
 let valid_tyvar_name name =
   name <> "" && name.[0] <> '_'
 
-(* Here we take a layout argument and ignore any layout annotations in the styp.
-   The expectation is most callers will get the layout from the annotation, but
+(* Here we take a kkind argument and ignore any kkind annotations in the styp.
+   The expectation is most callers will get the kkind from the annotation, but
    in some cases (objects) we don't want to support those annotations, so it
    makes sense for the caller to do this. *)
-let transl_type_param env styp layout =
+let transl_type_param env styp kkind =
   let loc = styp.ptyp_loc in
   match styp.ptyp_desc with
     Ptyp_any ->
-      let ty = new_global_var ~name:"_" layout in
+      let ty = new_global_var ~name:"_" kkind in
         { ctyp_desc = Ttyp_any; ctyp_type = ty; ctyp_env = env;
           ctyp_loc = loc; ctyp_attributes = styp.ptyp_attributes; }
   | Ptyp_var name ->
@@ -155,7 +154,7 @@ let transl_type_param env styp layout =
           ignore (TyVarMap.find name !type_variables);
           raise Already_bound
         with Not_found ->
-          let v = new_global_var ~name layout in
+          let v = new_global_var ~name kkind in
             type_variables := TyVarMap.add name v !type_variables;
             v
       in
@@ -163,11 +162,11 @@ let transl_type_param env styp layout =
           ctyp_loc = loc; ctyp_attributes = styp.ptyp_attributes; }
   | _ -> assert false
 
-let transl_type_param env styp layout =
+let transl_type_param env styp kkind =
   (* Currently useless, since type parameters cannot hold attributes
      (but this could easily be lifted in the future). *)
   Builtin_attributes.warning_scope styp.ptyp_attributes
-    (fun () -> transl_type_param env styp layout)
+    (fun () -> transl_type_param env styp kkind)
 
 let get_alloc_mode styp =
   match Builtin_attributes.has_local styp.ptyp_attributes with
@@ -190,20 +189,20 @@ let rec extract_params styp =
       (l, arg_mode, a) :: params, ret, ret_mode
   | _ -> final styp
 
-let new_pre_univar ?name layout =
-  let v = newvar ?name layout in pre_univars := v :: !pre_univars; v
+let new_pre_univar ?name kkind =
+  let v = newvar ?name kkind in pre_univars := v :: !pre_univars; v
 
 type poly_univars = (string * type_expr) list
 let make_poly_univars vars =
-  List.map (fun name -> name, newvar ~name Layout.value) vars
+  List.map (fun name -> name, newvar ~name Kkind.value) vars
 
 let check_poly_univars env loc vars =
   vars |> List.iter (fun (_, v) -> generalize v);
   vars |> List.map (fun (name, ty1) ->
     let v = Btype.proxy ty1 in
     begin match get_desc v with
-    | Tvar { name; layout } when get_level v = Btype.generic_level ->
-        set_type_desc v (Tunivar { name; layout })
+    | Tvar { name; kkind } when get_level v = Btype.generic_level ->
+        set_type_desc v (Tunivar { name; kkind })
     | _ ->
        raise (Error (loc, env, Cannot_quantify(name, v)))
     end;
@@ -213,8 +212,8 @@ let instance_poly_univars env loc vars =
   let vs = check_poly_univars env loc vars in
   vs |> List.iter (fun v ->
     match get_desc v with
-    | Tunivar { name; layout } ->
-      set_type_desc v (Tvar { name; layout })
+    | Tunivar { name; kkind } ->
+      set_type_desc v (Tvar { name; kkind })
     | _ -> assert false);
   vs
 
@@ -257,10 +256,10 @@ and transl_type_aux env policy mode styp =
   match styp.ptyp_desc with
     Ptyp_any ->
       let ty =
-        if policy = Univars then new_pre_univar Layout.any else
+        if policy = Univars then new_pre_univar Kkind.any else
           if policy = Fixed then
             raise (Error (styp.ptyp_loc, env, Unbound_type_variable "_"))
-          else newvar Layout.any
+          else newvar Kkind.any
       in
       ctyp Ttyp_any ty
   | Ptyp_var name ->
@@ -273,8 +272,8 @@ and transl_type_aux env policy mode styp =
         instance (fst (TyVarMap.find name !used_variables))
       with Not_found ->
         let v =
-          if policy = Univars then new_pre_univar ~name Layout.any
-          else newvar ~name Layout.any
+          if policy = Univars then new_pre_univar ~name Kkind.any
+          else newvar ~name Kkind.any
         in
         used_variables := TyVarMap.add name (v, styp.ptyp_loc) !used_variables;
         v
@@ -311,11 +310,11 @@ and transl_type_aux env policy mode styp =
           let arg_mode = Alloc_mode.of_const arg_mode in
           let ret_mode = Alloc_mode.of_const ret_mode in
           let arrow_desc = (l, arg_mode, ret_mode) in
-          (* Layouts: For now, we require function arguments and returns to have
-             layout value.  See comment in [Ctype.filter_arrow].  *)
+          (* Kkinds: For now, we require function arguments and returns to have
+             kkind value.  See comment in [Ctype.filter_arrow].  *)
           begin match
-            constrain_type_layout env arg_ty Layout.value,
-            constrain_type_layout env ret_cty.ctyp_type Layout.value
+            constrain_type_kkind env arg_ty Kkind.value,
+            constrain_type_kkind env ret_cty.ctyp_type Kkind.value
           with
           | Ok _, Ok _ -> ()
           | Error e, _ ->
@@ -337,7 +336,7 @@ and transl_type_aux env policy mode styp =
     assert (List.length stl >= 2);
     let ctys = List.map (transl_type env policy Alloc_mode.Global) stl in
     List.iter (fun {ctyp_type; ctyp_loc} ->
-      match constrain_type_layout env ctyp_type Layout.value with
+      match constrain_type_kkind env ctyp_type Kkind.value with
       | Ok _ -> ()
       | Error e ->
         raise (Error(ctyp_loc, env,
@@ -436,8 +435,8 @@ and transl_type_aux env policy mode styp =
           in
           (* NB: row is always non-static here; more is thus never Tnil *)
           let more =
-            if policy = Univars then new_pre_univar Layout.value
-            else newvar Layout.value
+            if policy = Univars then new_pre_univar Kkind.value
+            else newvar Kkind.value
           in
           let row =
             create_row ~fields ~more
@@ -467,7 +466,7 @@ and transl_type_aux env policy mode styp =
           ty
         with Not_found ->
           if !Clflags.principal then begin_def ();
-          let t = newvar Layout.any in
+          let t = newvar Kkind.any in
           used_variables :=
             TyVarMap.add alias (t, styp.ptyp_loc) !used_variables;
           let ty = transl_type env policy mode st in
@@ -482,10 +481,10 @@ and transl_type_aux env policy mode styp =
           let t = instance t in
           let px = Btype.proxy t in
           begin match get_desc px with
-          | Tvar { name = None; layout } ->
-             set_type_desc px (Tvar { name = Some alias; layout })
-          | Tunivar { name = None; layout } ->
-             set_type_desc px (Tunivar {name = Some alias; layout})
+          | Tvar { name = None; kkind } ->
+             set_type_desc px (Tvar { name = Some alias; kkind })
+          | Tunivar { name = None; kkind } ->
+             set_type_desc px (Tunivar {name = Some alias; kkind})
           | _ -> ()
           end;
           { ty with ctyp_type = t }
@@ -495,7 +494,7 @@ and transl_type_aux env policy mode styp =
       let name = ref None in
       let mkfield l f =
         newty (Tvariant (create_row ~fields:[l,f]
-                           ~more:(newvar Layout.value)
+                           ~more:(newvar Kkind.value)
                            ~closed:true ~fixed:None ~name:None)) in
       let hfields = Hashtbl.create 17 in
       let add_typed_field loc l f =
@@ -524,7 +523,7 @@ and transl_type_aux env policy mode styp =
                    List.map (transl_type env policy Alloc_mode.Global) stl)
             in
             List.iter (fun {ctyp_type; ctyp_loc} ->
-              match constrain_type_layout env ctyp_type Layout.value with
+              match constrain_type_kkind env ctyp_type Kkind.value with
               | Ok _ -> ()
               | Error e ->
                 raise (Error(ctyp_loc, env,
@@ -591,15 +590,15 @@ and transl_type_aux env policy mode styp =
         create_row ~fields ~more ~closed:(closed = Closed) ~fixed:None ~name
       in
       let more =
-        if Btype.static_row (make_row (newvar Layout.value))
+        if Btype.static_row (make_row (newvar Kkind.value))
         then newty Tnil
-        else if policy = Univars then new_pre_univar Layout.value
-        else newvar Layout.value
+        else if policy = Univars then new_pre_univar Kkind.value
+        else newvar Kkind.value
       in
       let ty = newty (Tvariant (make_row more)) in
       ctyp (Ttyp_variant (tfields, closed, present)) ty
   | Ptyp_poly(vars, st) ->
-     (* CJC XXX probably some work to do here when we add layout annotations on
+     (* CJC XXX probably some work to do here when we add kkind annotations on
         type parameters *)
       let vars = List.map (fun v -> v.txt) vars in
       begin_def();
@@ -614,7 +613,7 @@ and transl_type_aux env policy mode styp =
       let ty_list = check_poly_univars env styp.ptyp_loc new_univars in
       let ty_list = List.filter (fun v -> deep_occur v ty) ty_list in
       let ty' = Btype.newgenty (Tpoly(ty, ty_list)) in
-      unify_var env (newvar Layout.any) ty';
+      unify_var env (newvar Kkind.any) ty';
       ctyp (Ttyp_poly (vars, cty)) ty'
   | Ptyp_package (p, l) ->
       (* CJC XXX
@@ -635,7 +634,7 @@ and transl_type_aux env policy mode styp =
        everything in a package type with constraint be value.
 
        An alternative is to walk into the constrained module, using the
-       longidents, and find the actual things that need layout checking.
+       longidents, and find the actual things that need kkind checking.
        See [Typemod.package_constraints_sig] for code that does a
        similar traversal from a longident.
     *)
@@ -649,7 +648,7 @@ and transl_type_aux env policy mode styp =
                              s, transl_type env policy Alloc_mode.Global pty
                           ) l in
       List.iter (fun (s,{ctyp_type=ty}) ->
-        match Ctype.constrain_type_layout env ty Layout.value with
+        match Ctype.constrain_type_kkind env ty Kkind.value with
         | Ok _ -> ()
         | Error e ->
           raise (Error(s.loc,env,
@@ -689,7 +688,7 @@ and transl_fields env policy o fields =
             (fun () -> transl_type env policy Alloc_mode.Global (Ast_helper.Typ.force_poly ty1))
         in
         begin
-          match constrain_type_layout env ty1.ctyp_type Layout.value with
+          match constrain_type_kkind env ty1.ctyp_type Kkind.value with
           | Ok _ -> ()
           | Error e ->
             raise (Error(of_loc, env,
@@ -735,8 +734,8 @@ and transl_fields env policy o fields =
   let ty_init =
      match o, policy with
      | Closed, _ -> newty Tnil
-     | Open, Univars -> new_pre_univar Layout.value
-     | Open, _ -> newvar Layout.value in
+     | Open, Univars -> new_pre_univar Kkind.value
+     | Open, _ -> newvar Kkind.value in
   let ty = List.fold_left (fun ty (s, ty') ->
       newty (Tfield (s, field_public, ty', ty))) ty_init fields in
   ty, object_fields
@@ -775,7 +774,7 @@ let globalize_used_variables env fixed =
   let r = ref [] in
   TyVarMap.iter
     (fun name (ty , loc) ->
-      let v = new_global_var Layout.any in
+      let v = new_global_var Kkind.any in
       let snap = Btype.snapshot () in
       if try unify env v ty; true with _ -> Btype.backtrack snap; false
       then try
@@ -783,7 +782,7 @@ let globalize_used_variables env fixed =
       with Not_found ->
         if fixed && Btype.is_Tvar ty then
           raise(Error(loc, env, Unbound_type_variable ("'"^name)));
-        let v2 = new_global_var Layout.any in
+        let v2 = new_global_var Kkind.any in
         r := (loc, v, v2) :: !r;
         type_variables := TyVarMap.add name v2 !type_variables)
     !used_variables;
@@ -821,8 +820,8 @@ let transl_simple_type_univars env styp =
     List.fold_left
       (fun acc v ->
         match get_desc v with
-          Tvar { name; layout } when get_level v = Btype.generic_level ->
-            set_type_desc v (Tunivar { name; layout }); v :: acc
+          Tvar { name; kkind } when get_level v = Btype.generic_level ->
+            set_type_desc v (Tunivar { name; kkind }); v :: acc
         | _ -> acc)
       [] !pre_univars
   in
@@ -985,7 +984,7 @@ let report_error env ppf = function
       | Object_field -> "Object field"
     in
     fprintf ppf "@[%s types must have layout value.@ \ %a@]"
-      s (Layout.Violation.report_with_offender
+      s (Kkind.Violation.report_with_offender
            ~offender:(fun ppf -> Printtyp.type_expr ppf typ)) err
 
 let () =

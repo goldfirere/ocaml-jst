@@ -698,11 +698,11 @@ let mk_directive ~loc name arg =
       pdir_loc = make_loc loc;
     }
 
-let check_layout loc id =
+let check_kkind loc id =
   begin
     match id with
     | ("any" | "value" | "void" | "immediate64" | "immediate") -> ()
-    | _ -> expecting loc "layout"
+    | _ -> expecting loc "kind"
   end;
   Attr.mk ~loc:Location.none (mknoloc id) (PStr [])
 
@@ -3216,13 +3216,13 @@ type_parameters:
       { ps }
 ;
 
-layout:
-  ident { check_layout $loc($1) $1 }
+kkind:
+  ident { check_kkind $loc($1) $1 }
 ;
 
 parenthesized_type_parameter:
     type_parameter { $1 }
-  | type_variance type_variable COLON layout
+  | type_variance type_variable COLON kkind
       { {$2 with ptyp_attributes = [$4]}, $1 }
 ;
 

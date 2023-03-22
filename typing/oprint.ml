@@ -277,9 +277,9 @@ let join_modes rm1 am2 =
   | _, Oam_unknown -> Oam_unknown
   | Oam_global, Oam_global -> Oam_global
 
-let print_out_layout ppf = function
-  | Olay_const lay -> fprintf ppf "%s" (Layouts.Layout.string_of_const lay)
-  | Olay_var       -> fprintf ppf "'_concrete_layout__should_never_be_printed"
+let print_out_kkind ppf = function
+  | Olay_const lay -> fprintf ppf "%s" (Kkind.string_of_const lay)
+  | Olay_var       -> fprintf ppf "'_concrete_kind__should_never_be_printed"
       (* CR layouts: We need to either give these names somehow or not print
          them at all *)
 
@@ -399,10 +399,10 @@ and print_out_type_3 mode ppf =
   | Otyp_attribute (t, attr) ->
       fprintf ppf "@[<1>(%a [@@%s])@]"
         (print_out_type_0 mode) t attr.oattr_name
-  | Otyp_layout_annot (t, lay) ->
+  | Otyp_kkind_annot (t, lay) ->
     fprintf ppf "@[<1>(%a@ :@ %a)@]"
       (print_out_type_0 mode) t
-      print_out_layout lay
+      print_out_kkind lay
 and print_out_type ppf typ =
   print_out_type_0 Oam_global ppf typ
 and print_simple_out_type ppf typ =
@@ -747,10 +747,10 @@ and print_out_type_decl kwd ppf td =
     Asttypes.Private -> fprintf ppf " private"
   | Asttypes.Public -> ()
   in
-  let print_layout ppf =
-    match td.otype_layout with
+  let print_kkind ppf =
+    match td.otype_kkind with
     | None -> ()
-    | Some lay -> fprintf ppf " [%@%@%s]" (Layouts.Layout.string_of_const lay)
+    | Some lay -> fprintf ppf " [%@%@%s]" (Kkind.string_of_const lay)
   in
   let print_unboxed ppf =
     if td.otype_unboxed then fprintf ppf " [%@%@unboxed]" else ()
@@ -780,7 +780,7 @@ and print_out_type_decl kwd ppf td =
     print_name_params
     print_out_tkind ty
     print_constraints
-    print_layout
+    print_kkind
     print_unboxed
 
 and print_simple_out_gf_type ppf (ty, gf) =

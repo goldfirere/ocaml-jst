@@ -16,7 +16,6 @@
 (* Representation of types and declarations *)
 
 open Asttypes
-open Layouts
 
 (* Type expressions for the core language *)
 
@@ -29,7 +28,7 @@ type transient_expr =
 and type_expr = transient_expr
 
 and type_desc =
-  | Tvar of { name : string option; layout : layout }
+  | Tvar of { name : string option; kkind : Kkind.t }
   | Tarrow of arrow_desc * type_expr * type_expr * commutable
   | Ttuple of type_expr list
   | Tconstr of Path.t * type_expr list * abbrev_memo ref
@@ -39,7 +38,7 @@ and type_desc =
   | Tlink of type_expr
   | Tsubst of type_expr * type_expr option
   | Tvariant of row_desc
-  | Tunivar of { name : string option; layout : layout }
+  | Tunivar of { name : string option; kkind : Kkind.t }
   | Tpoly of type_expr * type_expr list
   | Tpackage of Path.t * (Longident.t * type_expr) list
 
@@ -233,24 +232,24 @@ type type_declaration =
 and type_decl_kind = (label_declaration, constructor_declaration) type_kind
 
 and ('lbl, 'cstr) type_kind =
-    Type_abstract of {layout : layout}
+    Type_abstract of {kkind : Kkind.t}
   | Type_record of 'lbl list * record_representation
   | Type_variant of 'cstr list * variant_representation
   | Type_open
 
 and tag = Ordinary of {src_index: int;     (* Unique name (per type) *)
                        runtime_tag: int}   (* The runtime tag *)
-        | Extension of Path.t * layout array
+        | Extension of Path.t * Kkind.t array
 
 and record_representation =
-  | Record_unboxed of layout
+  | Record_unboxed of Kkind.t
   | Record_inlined of tag * variant_representation
-  | Record_boxed of layout array
+  | Record_boxed of Kkind.t array
   | Record_float
 
 and variant_representation =
-  | Variant_unboxed of layout
-  | Variant_boxed of layout array array
+  | Variant_unboxed of Kkind.t
+  | Variant_boxed of Kkind.t array array
   | Variant_extensible
 
 and global_flag =
@@ -264,7 +263,7 @@ and label_declaration =
     ld_mutable: mutable_flag;
     ld_global: global_flag;
     ld_type: type_expr;
-    ld_layout : layout;
+    ld_kkind : Kkind.t;
     ld_loc: Location.t;
     ld_attributes: Parsetree.attributes;
     ld_uid: Uid.t;
@@ -288,7 +287,7 @@ type extension_constructor =
   { ext_type_path: Path.t;
     ext_type_params: type_expr list;
     ext_args: constructor_arguments;
-    ext_arg_layouts: layout array;
+    ext_arg_kkinds: Kkind.t array;
     ext_constant: bool;
     ext_ret_type: type_expr option;
     ext_private: private_flag;
@@ -396,7 +395,7 @@ type constructor_description =
     cstr_res: type_expr;                (* Type of the result *)
     cstr_existentials: type_expr list;  (* list of existentials *)
     cstr_args: (type_expr * global_flag) list;          (* Type of the arguments *)
-    cstr_arg_layouts: layout array;     (* Layouts of the arguments *)
+    cstr_arg_kkinds: Kkind.t array;     (* Kkinds of the arguments *)
     cstr_arity: int;                    (* Number of arguments *)
     cstr_tag: tag;                      (* Tag for heap blocks *)
     cstr_repr: variant_representation;  (* Repr of the outer variant *)
@@ -436,59 +435,58 @@ let item_visibility = function
   | Sig_class (_, _, _, vis)
   | Sig_class_type (_, _, _, vis) -> vis
 
-let kind_abstract ~layout = Type_abstract { layout }
-(* CR-someday layouts: We could match on the layout and return one of the below
+let kind_abstract ~kkind = Type_abstract { kkind }
+(* CR-someday layouts: We could match on the kkind and return one of the below
    to share more - test whether the memory savings is worth the runtime cost of
    the match.  I implemented a similar optimization in Subst.norm, but was
    surprised to find basically no impact on artifact sizes. *)
 
-let kind_abstract_value = kind_abstract ~layout:Layout.value
-let kind_abstract_immediate = kind_abstract ~layout:Layout.immediate
-let kind_abstract_any = kind_abstract ~layout:Layout.any
+let kind_abstract_value = kind_abstract ~kkind:Kkind.value
+let kind_abstract_immediate = kind_abstract ~kkind:Kkind.immediate
+let kind_abstract_any = kind_abstract ~kkind:Kkind.any
 
 let decl_is_abstract decl =
   match decl.type_kind with
   | Type_abstract _ -> true
   | Type_record _ | Type_variant _ | Type_open -> false
 
-let all_void layouts =
-  Array.for_all (fun l ->
-    match Layout.get l with
+let all_void kkinds =
+  Array.for_all (fun kk ->
+    match Kkind.get kk with
     | Const Void -> true
-    | Const (Any | Immediate | Immediate64 | Value) | Var _ -> false)
-    layouts
+    | Const (Value | Immediate64 | Immediate | Any) | Var _ -> false)
+    kkinds
 
-let layout_bound_of_record_representation : record_representation -> _ =
-  let open Layout in function
-  | Record_unboxed l -> l
+let kkind_bound_of_record_representation : record_representation -> _ =
+  let open Kkind in function
+  | Record_unboxed kk -> kk
   | Record_float -> value
   | Record_inlined (tag,rep) -> begin
       match (tag,rep) with
       | Extension _, _ -> value
       | _, Variant_extensible -> value
-      | Ordinary _, Variant_unboxed l -> l (* n must be 0 here *)
-      | Ordinary {src_index}, Variant_boxed layouts ->
-        if all_void layouts.(src_index)
+      | Ordinary _, Variant_unboxed kk -> kk (* n must be 0 here *)
+      | Ordinary {src_index}, Variant_boxed kkinds ->
+        if all_void kkinds.(src_index)
         then immediate
         else value
     end
-  | Record_boxed layouts when all_void layouts -> immediate
+  | Record_boxed kkinds when all_void kkinds -> immediate
   | Record_boxed _ -> value
 
-let layout_bound_of_variant_representation : variant_representation -> _ =
-  let open Layout in function
-  | Variant_unboxed l -> l
-  | Variant_boxed layouts ->
-    if Array.for_all all_void layouts then immediate else value
+let kkind_bound_of_variant_representation : variant_representation -> _ =
+  let open Kkind in function
+  | Variant_unboxed kk -> kk
+  | Variant_boxed kkinds ->
+    if Array.for_all all_void kkinds then immediate else value
   | Variant_extensible -> value
 
-(* should not mutate sorts *)
-let layout_bound_of_kind : _ type_kind -> _ =
-  let open Layout in function
-  | Type_abstract { layout } -> layout
+let kkind_bound_of_kind : _ type_kind -> _ =
+  let open Kkind in function
+  | Type_abstract { kkind } -> kkind
   | Type_open -> value
-  | Type_record (_,rep) -> layout_bound_of_record_representation rep
-  | Type_variant (_, rep) -> layout_bound_of_variant_representation rep
+  | Type_record (_,rep) -> kkind_bound_of_record_representation rep
+  | Type_variant (_, rep) -> kkind_bound_of_variant_representation rep
 
 let decl_is_unboxed decl =
   match decl.type_kind with
@@ -505,7 +503,7 @@ type label_description =
     lbl_arg: type_expr;                 (* Type of the argument *)
     lbl_mut: mutable_flag;              (* Is this a mutable field? *)
     lbl_global: global_flag;        (* Is this a global field? *)
-    lbl_layout : layout;                (* Layout of the argument *)
+    lbl_kkind : Kkind.t;                (* Kkind of the argument *)
     lbl_pos: int;                       (* Position in block *)
     lbl_num: int;                       (* Position in type *)
     lbl_all: label_description array;   (* All the labels in this type *)
@@ -666,10 +664,10 @@ module Transient_expr = struct
     ty.desc <- d
   let set_level ty lv = ty.level <- lv
   let set_scope ty sc = ty.scope <- sc
-  let set_var_layout ty layout' =
+  let set_var_kkind ty kkind' =
     match ty.desc with
     | Tvar { name; _ } ->
-      set_desc ty (Tvar { name; layout = layout' })
+      set_desc ty (Tvar { name; kkind = kkind' })
     | _ -> assert false
   let coerce ty = ty
   let repr = repr
@@ -851,16 +849,16 @@ let link_type ty ty' =
   (* Name is a user-supplied name for this unification variable (obtained
    * through a type annotation for instance). *)
   match desc, ty'.desc with
-    Tvar { name }, Tvar { name = name'; layout = layout' } ->
+    Tvar { name }, Tvar { name = name'; kkind = kkind' } ->
       begin match name, name' with
       | Some _, None ->
         log_type ty';
-        Transient_expr.set_desc ty' (Tvar { name; layout = layout' })
+        Transient_expr.set_desc ty' (Tvar { name; kkind = kkind' })
       | None, Some _ -> ()
       | Some _, Some _ ->
         if ty.level < ty'.level then begin
           log_type ty';
-          Transient_expr.set_desc ty' (Tvar { name; layout = layout' })
+          Transient_expr.set_desc ty' (Tvar { name; kkind = kkind' })
         end
       | None, None   -> ()
       end
@@ -890,10 +888,10 @@ let set_scope ty scope =
     if ty.id <= !last_snapshot then log_change (Cscope (ty, ty.scope));
     Transient_expr.set_scope ty scope
   end
-let set_var_layout ty layout =
+let set_var_kkind ty kkind =
   let ty = repr ty in
   log_type ty;
-  Transient_expr.set_var_layout ty layout
+  Transient_expr.set_var_kkind ty kkind
 let set_univar rty ty =
   log_change (Cuniv (rty, !rty)); rty := Some ty
 let set_name nm v =

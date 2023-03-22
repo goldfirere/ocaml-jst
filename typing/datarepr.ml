@@ -17,7 +17,6 @@
    determining their representation. *)
 
 open Asttypes
-open Layouts
 open Types
 open Btype
 
@@ -93,18 +92,18 @@ let constructor_args ~current_unit priv cd_args cd_res path rep =
 
 let constructor_descrs ~current_unit ty_path decl cstrs rep =
   let ty_res = newgenconstr ty_path decl.type_params in
-  let cstr_arg_layouts : layout array array =
+  let cstr_arg_kkinds : Kkind.t array array =
     match rep with
     | Variant_extensible -> assert false
-    | Variant_boxed layouts -> layouts
-    | Variant_unboxed layout -> [| [| layout |] |]
+    | Variant_boxed kkinds -> kkinds
+    | Variant_unboxed kkind -> [| [| kkind |] |]
   in
-  let all_void layouts = Array.for_all Layout.(equate void) layouts in
+  let all_void kkinds = Array.for_all Kkind.(equate void) kkinds in
   let num_consts = ref 0 and num_nonconsts = ref 0 in
   Array.iter
-    (fun layouts ->
-      if all_void layouts then incr num_consts else incr num_nonconsts)
-    cstr_arg_layouts;
+    (fun kkinds ->
+      if all_void kkinds then incr num_consts else incr num_nonconsts)
+    cstr_arg_kkinds;
   let describe_constructor (src_index, const_tag, nonconst_tag, acc)
         {cd_id; cd_args; cd_res; cd_loc; cd_attributes; cd_uid} =
     let cstr_name = Ident.name cd_id in
@@ -113,8 +112,8 @@ let constructor_descrs ~current_unit ty_path decl cstrs rep =
       | Some ty_res' -> ty_res'
       | None -> ty_res
     in
-    let cstr_arg_layouts = cstr_arg_layouts.(src_index) in
-    let cstr_constant = all_void cstr_arg_layouts in
+    let cstr_arg_kkinds = cstr_arg_kkinds.(src_index) in
+    let cstr_constant = all_void cstr_arg_kkinds in
     let runtime_tag, const_tag, nonconst_tag =
       if cstr_constant
       then const_tag, 1 + const_tag, nonconst_tag
@@ -135,7 +134,7 @@ let constructor_descrs ~current_unit ty_path decl cstrs rep =
         cstr_res;
         cstr_existentials;
         cstr_args;
-        cstr_arg_layouts;
+        cstr_arg_kkinds;
         cstr_arity = List.length cstr_args;
         cstr_tag;
         cstr_repr = rep;
@@ -160,7 +159,7 @@ let extension_descr ~current_unit path_ext ext =
         Some type_ret -> type_ret
       | None -> newgenconstr ext.ext_type_path ext.ext_type_params
   in
-  let cstr_tag = Extension (path_ext, ext.ext_arg_layouts) in
+  let cstr_tag = Extension (path_ext, ext.ext_arg_kkinds) in
   let existentials, cstr_args, cstr_inlined =
     constructor_args ~current_unit ext.ext_private ext.ext_args ext.ext_ret_type
       path_ext (Record_inlined (cstr_tag, Variant_extensible))
@@ -169,7 +168,7 @@ let extension_descr ~current_unit path_ext ext =
       cstr_res = ty_res;
       cstr_existentials = existentials;
       cstr_args;
-      cstr_arg_layouts = ext.ext_arg_layouts;
+      cstr_arg_kkinds = ext.ext_arg_kkinds;
       cstr_arity = List.length cstr_args;
       cstr_tag;
       cstr_repr = Variant_extensible;
@@ -191,9 +190,9 @@ let none =
 let dummy_label =
   { lbl_name = ""; lbl_res = none; lbl_arg = none;
     lbl_mut = Immutable; lbl_global = Unrestricted;
-    lbl_layout = Layout.any;
+    lbl_kkind = Kkind.any;
     lbl_num = -1; lbl_pos = -1; lbl_all = [||];
-    lbl_repres = Record_unboxed Layout.any;
+    lbl_repres = Record_unboxed Kkind.any;
     lbl_private = Public;
     lbl_loc = Location.none;
     lbl_attributes = [];
@@ -205,14 +204,14 @@ let label_descrs ty_res lbls repres priv =
   let rec describe_labels num pos = function
       [] -> []
     | l :: rest ->
-        let is_void = Layout.(equate l.ld_layout void) in
+        let is_void = Kkind.(equate l.ld_kkind void) in
         let lbl =
           { lbl_name = Ident.name l.ld_id;
             lbl_res = ty_res;
             lbl_arg = l.ld_type;
             lbl_mut = l.ld_mutable;
             lbl_global = l.ld_global;
-            lbl_layout = l.ld_layout;
+            lbl_kkind = l.ld_kkind;
             lbl_pos = if is_void then lbl_pos_void else pos;
             lbl_num = num;
             lbl_all = all_labels;

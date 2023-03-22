@@ -16,7 +16,6 @@
 (* Predefined type constructors (with special typing rules in typecore) *)
 
 open Path
-open Layouts
 open Types
 open Btype
 
@@ -160,7 +159,7 @@ let common_initial_env add_type add_extension empty_env =
   let add_type = mk_add_type add_type
   and add_type1 ?(kind=fun _ -> Types.kind_abstract_value) type_ident
       ~variance ~separability env =
-    let param = newgenvar Layout.value in
+    let param = newgenvar Kkind.value in
     let decl =
       {type_params = [param];
        type_arity = 1;
@@ -179,12 +178,12 @@ let common_initial_env add_type add_extension empty_env =
     in
     add_type type_ident decl env
   in
-  let add_extension id args layouts =
+  let add_extension id args kkinds =
     add_extension id
       { ext_type_path = path_exn;
         ext_type_params = [];
         ext_args = Cstr_tuple (List.map (fun x -> (x, Unrestricted)) args);
-        ext_arg_layouts = layouts;
+        ext_arg_kkinds = kkinds;
         ext_constant = args = [];
         ext_ret_type = None;
         ext_private = Asttypes.Public;
@@ -195,7 +194,7 @@ let common_initial_env add_type add_extension empty_env =
         ext_uid = Uid.of_predef_id id;
       }
   in
-  let variant constrs layouts = Type_variant (constrs, Variant_boxed layouts) in
+  let variant constrs kkinds = Type_variant (constrs, Variant_boxed kkinds) in
   empty_env
   (* Predefined types - alphabetical order *)
   |> add_type1 ident_array
@@ -222,36 +221,36 @@ let common_initial_env add_type add_extension empty_env =
          variant [cstr ident_nil [];
                   cstr ident_cons [tvar, Unrestricted;
                                    type_list tvar, Unrestricted]]
-           [| [| |]; [| Layout.value; Layout.value |] |] )
+           [| [| |]; [| Kkind.value; Kkind.value |] |] )
   |> add_type ident_nativeint
   |> add_type1 ident_option
        ~variance:Variance.covariant
        ~separability:Separability.Ind
        ~kind:(fun tvar ->
          variant [cstr ident_none []; cstr ident_some [tvar, Unrestricted]]
-           [| [| |]; [| Layout.value |] |])
+           [| [| |]; [| Kkind.value |] |])
   |> add_type ident_string
   |> add_type ident_unit
        ~kind:(variant [cstr ident_void []] [| [| |] |])
   (* Predefined exceptions - alphabetical order *)
   |> add_extension ident_assert_failure
        [newgenty (Ttuple[type_string; type_int; type_int])]
-       [| Layout.value |]
+       [| Kkind.value |]
   |> add_extension ident_division_by_zero [] [||]
   |> add_extension ident_end_of_file [] [||]
-  |> add_extension ident_failure [type_string] [| Layout.value |]
-  |> add_extension ident_invalid_argument [type_string] [| Layout.value |]
+  |> add_extension ident_failure [type_string] [| Kkind.value |]
+  |> add_extension ident_invalid_argument [type_string] [| Kkind.value |]
   |> add_extension ident_match_failure
        [newgenty (Ttuple[type_string; type_int; type_int])]
-       [| Layout.value |]
+       [| Kkind.value |]
   |> add_extension ident_not_found [] [||]
   |> add_extension ident_out_of_memory [] [||]
   |> add_extension ident_stack_overflow [] [||]
   |> add_extension ident_sys_blocked_io [] [||]
-  |> add_extension ident_sys_error [type_string] [| Layout.value |]
+  |> add_extension ident_sys_error [type_string] [| Kkind.value |]
   |> add_extension ident_undefined_recursive_module
        [newgenty (Ttuple[type_string; type_int; type_int])]
-       [| Layout.value |]
+       [| Kkind.value |]
 
 let build_initial_env add_type add_exception empty_env =
   let common = common_initial_env add_type add_exception empty_env in

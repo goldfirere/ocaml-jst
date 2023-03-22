@@ -49,9 +49,9 @@ type global_flag =
   | Nonlocal
   | Nothing
 
-(* constant layouts are parsed as layout annotations, and also used
-   in the type checker as already-inferred (i.e. non-variable) layouts *)
-type const_layout =
+(* constant kkinds are parsed as kkind annotations, and also used
+   in the type checker as already-inferred (i.e. non-variable) kkinds *)
+type const_kkind =
   | Any
   | Value
   | Void

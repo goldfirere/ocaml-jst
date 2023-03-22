@@ -15,7 +15,6 @@
 
 (* Typechecking of type expressions for the core language *)
 
-open Layouts
 open Types
 
 val valid_tyvar_name : string -> bool
@@ -50,7 +49,7 @@ val transl_type_scheme:
 val reset_type_variables: unit -> unit
 val type_variable: Location.t -> string -> type_expr
 val transl_type_param:
-  Env.t -> Parsetree.core_type -> layout -> Typedtree.core_type
+  Env.t -> Parsetree.core_type -> Kkind.t -> Typedtree.core_type
 
 val get_alloc_mode : Parsetree.core_type -> alloc_mode_const
 
@@ -86,7 +85,7 @@ type error =
   | Unsupported_extension of Clflags.Extension.t
   | Polymorphic_optional_param
   | Non_value of
-      {vloc : value_loc; typ : type_expr; err : Layout.Violation.t}
+      {vloc : value_loc; typ : type_expr; err : Kkind.Violation.t}
 
 exception Error of Location.t * Env.t * error
 

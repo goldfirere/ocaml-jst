@@ -19,7 +19,6 @@
 open Misc
 open Asttypes
 open Primitive
-open Layouts
 open Types
 open Typedtree
 open Typeopt
@@ -55,9 +54,9 @@ let declare_probe_handlers lam =
     lam
     !probe_handlers
 
-(* Layout checking may default everything once we reach translcore *)
-let is_void_sort s = Layout.can_make_void (Layout.of_sort s)
-let is_void_layout = Layout.can_make_void
+(* Kkind checking may default everything once we reach translcore *)
+let is_void_sort s = Kkind.can_make_void (Kkind.of_sort s)
+let is_void_kkind = Kkind.can_make_void
 
 (* Compile an exception/extension definition *)
 
@@ -245,9 +244,9 @@ let rec push_defaults loc bindings use_lhs cases partial warnings =
               Texp_ident
                 (Path.Pident param, mknoloc (Longident.Lident name),
                  desc, Id_value)},
-             Sort.value,
+             Kkind.Sort.value,
              (* CR ccasinghino Value here will changes when functions take other
-                layouts *)
+                kkinds *)
              cases, partial) }
       in
       [{c_lhs = {pat with pat_desc = Tpat_var (param, mknoloc name)};
@@ -440,7 +439,7 @@ let transl_list_with_voids ~is_void ~value_kind ~transl expr_list =
 
 let rec transl_exp ~scopes void_k e =
   (* CR layouts v1: consider this place for a sanity checking assert about e's
-     layout and void_k as part of the checks we want for v0.  (might be too
+     kkind and void_k as part of the checks we want for v0.  (might be too
      expensive, this late)
   *)
   transl_exp1 ~scopes ~in_new_scope:false void_k e
@@ -534,7 +533,7 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
                Matching.for_trywith ~scopes k e.exp_loc (Lvar id)
                  (transl_cases_try ~scopes void_k pat_expr_list), k)
   | Texp_tuple el ->
-      (* CR ccasinghino work to do here when we allow other layouts in tuples *)
+      (* CR ccasinghino work to do here when we allow other kkinds in tuples *)
       let ll = transl_list ~scopes el in
       let shape =
         List.map (fun e -> Typeopt.value_kind e.exp_env e.exp_type) el
@@ -550,7 +549,7 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
   | Texp_construct(_, cstr, args) ->
       let transl_arg_list args =
         let args = List.mapi (fun i arg -> (i,arg)) args in
-        let is_void (i,_) = is_void_layout cstr.cstr_arg_layouts.(i) in
+        let is_void (i,_) = is_void_kkind cstr.cstr_arg_kkinds.(i) in
         let value_kind (_,e) = Typeopt.value_kind e.exp_env e.exp_type in
         let transl void_k (_,e) = transl_exp ~scopes void_k e in
         transl_list_with_voids ~is_void ~value_kind ~transl args
@@ -627,7 +626,7 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
   | Texp_field(arg, _, lbl) -> begin
       match lbl.lbl_repres with
       | ((Record_unboxed l | Record_inlined (_, Variant_unboxed l)))
-        when is_void_layout l ->
+        when is_void_kkind l ->
           (* Special case for projecting from records like
              type t = { t : some_void_type } [@@unboxed]
           *)
@@ -750,8 +749,8 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
                   event_before ~scopes ifso (transl_exp ~scopes void_k ifso),
                   lambda_unit,
                   Pintval (* unit *))
-  | Texp_sequence(expr1, layout, expr2) ->
-      if is_void_layout layout then
+  | Texp_sequence(expr1, kkind, expr2) ->
+      if is_void_kkind kkind then
         let kind2 = value_kind_if_not_void expr2 void_k in
         catch_void (fun void_k -> transl_exp ~scopes void_k expr1)
           (event_before ~scopes expr2
@@ -761,13 +760,13 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
         Lsequence(transl_exp ~scopes Not_void expr1,
                   event_before ~scopes expr2 (transl_exp ~scopes void_k expr2))
   | Texp_while {wh_cond; wh_cond_region;
-                wh_body; wh_body_region; wh_body_layout} ->
+                wh_body; wh_body_region; wh_body_kkind} ->
       (* CR ccasinghino: Perhaps some cleverer encoding for void bodies is
          available, that doesn't use Lwhile and instead staticthrows right back
          to the condition. *)
       let cond = transl_exp ~scopes Not_void wh_cond in
       let body =
-        if is_void_layout wh_body_layout then
+        if is_void_kkind wh_body_kkind then
           catch_void (fun void_k -> transl_exp ~scopes void_k wh_body)
             lambda_unit Pintval
         else
@@ -794,10 +793,10 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
     let loc = of_location ~scopes e.exp_loc in
     Translcomprehension.transl_list_comprehension
       body blocks ~scopes ~loc ~transl_exp:(transl_exp Not_void)
-  | Texp_for {for_id; for_from; for_to; for_dir; for_body; for_body_layout;
+  | Texp_for {for_id; for_from; for_to; for_dir; for_body; for_body_kkind;
               for_region} ->
       let body =
-        if is_void_layout for_body_layout then
+        if is_void_kkind for_body_kkind then
           catch_void (fun void_k -> transl_exp ~scopes void_k for_body)
             lambda_unit Pintval
         else
@@ -957,7 +956,7 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
          transl_exp ~scopes Not_void e
       | `Other ->
          (* other cases compile to a lazy block holding a function.  The
-            typechecker enforces that e has layout value.  *)
+            typechecker enforces that e has kkind value.  *)
          let scopes = enter_lazy ~scopes in
          let fn = lfunction ~kind:(Curried {nlocal=0})
                             ~params:[Ident.create_local "param", Pgenval]
@@ -999,7 +998,7 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
           let oid = Ident.create_local "open" in
           let body, _ =
             (* CR ccasinghino Currently only allow values at the top level.
-               When we allow other layouts, and particularly void, we'll need
+               When we allow other kkinds, and particularly void, we'll need
                adjustments here. *)
             List.fold_left (fun (body, pos) id ->
               Llet(Alias, Pgenval, id,
@@ -1027,22 +1026,22 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
            the layouts of all function parameters.  Here we're building a
            function whose arguments are all the free variables in a probe
            handler.  To deal with this, we're simply requiring all their types
-           to have layout value.
+           to have kkind value.
 
-           It's really hacky to be doing this kind of layout check this late.
+           It's really hacky to be doing this kind of kkind check this late.
            The middle-end folks have plans to eliminate the need for it by
            reworking the way probes are compiled.  For that reason, I haven't
            bothered to give a particularly good error or handle the Not_found
            case from env.
 
-           (We could probably calculate the layouts of these variables here
+           (We could probably calculate the kkinds of these variables here
            rather than requiring them all to be value, but that would be even
            more hacky, and in any event can't doesn't make sense until we merge
            with the middle-end support).  *)
         let {val_type; _} = Env.find_value (Pident id) e.exp_env in
         match
-          Ctype.check_type_layout e.exp_env (Ctype.correct_levels val_type)
-            Layout.value
+          Ctype.check_type_kkind e.exp_env (Ctype.correct_levels val_type)
+            Kkind.value
         with
         | Ok _ -> ()
         | Error _ -> raise (Error (e.exp_loc, Bad_probe_layout id))
@@ -1534,7 +1533,7 @@ and transl_record ~scopes void_k kind loc env mode fields repres opt_init_expr =
   let no_init = match opt_init_expr with None -> true | _ -> false in
   match repres with
   | (Record_unboxed l | Record_inlined (_, Variant_unboxed l))
-    when is_void_layout l -> begin
+    when is_void_kkind l -> begin
     let field =
       match fields.(0) with
       | (_, Kept _) -> assert false
@@ -1701,7 +1700,7 @@ and transl_match ~scopes e arg sort pat_expr_list partial void_k =
         let ids_full = Typedtree.pat_bound_idents_full sort pv in
         let ids_kinds =
           List.filter_map (fun (id, _, ty, sort) ->
-            if Layout.can_make_void (Layout.of_sort sort)
+            if Kkind.can_make_void (Kkind.of_sort sort)
             then None
             else Some (id, Typeopt.value_kind pv.pat_env ty))
             ids_full
@@ -1826,7 +1825,7 @@ and transl_match ~scopes e arg sort pat_expr_list partial void_k =
 
 and transl_letop ~scopes loc env let_ ands param case partial warnings =
   (* CR-someday layouts: The typechecker is currently enforcing that everything
-     here has layout value, but we might want to relax that when we allow
+     here has kkind value, but we might want to relax that when we allow
      non-value function args and returns, and then this code would need to be
      revisited. *)
   let rec loop prev_lam = function

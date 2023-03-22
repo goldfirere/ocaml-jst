@@ -25,7 +25,7 @@ val pure_module : module_expr -> let_kind
 
 (* Used for translating Alloc_heap values in classes and modules.  The
    `void_continuation` must be [Void_cont n] iff the expression's type has
-   layout void.  In that case, the result will [Lstaticraise] to handler [n]
+   kkind void.  In that case, the result will [Lstaticraise] to handler [n]
    after evaluating the expression. *)
 val transl_exp: scopes:scopes -> void_continuation -> expression -> lambda
 val transl_apply: scopes:scopes

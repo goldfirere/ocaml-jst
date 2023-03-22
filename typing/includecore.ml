@@ -17,7 +17,6 @@
 
 open Asttypes
 open Path
-open Layouts
 open Types
 open Typedtree
 
@@ -230,7 +229,7 @@ type type_mismatch =
   | Variant_mismatch of variant_change list
   | Unboxed_representation of position
   | Extensible_representation of position
-  | Layout of Layout.Violation.t
+  | Kkind of Kkind.Violation.t
 
 let report_locality_mismatch first second ppf err =
   let {order; nonlocal} = err in
@@ -484,8 +483,8 @@ let report_type_mismatch first second decl env ppf err =
       pr "Their internal representations differ:@ %s %s %s."
          (choose ord first second) decl
          "is extensible"
-  | Layout v ->
-      Layout.Violation.report_with_name ~name:first ppf v
+  | Kkind v ->
+      Kkind.Violation.report_with_name ~name:first ppf v
 
 let compare_global_flags flag0 flag1 =
   match flag0, flag1 with
@@ -992,10 +991,10 @@ let type_declarations ?(equality = false) ~loc env ~mark name
   in
   if err <> None then err else
   let err = match (decl1.type_kind, decl2.type_kind) with
-      (_, Type_abstract { layout }) ->
-       (match Ctype.check_decl_layout env decl1 layout with
+      (_, Type_abstract { kkind }) ->
+       (match Ctype.check_decl_kkind env decl1 kkind with
         | Ok _ -> None
-        | Error v -> Some (Layout v))
+        | Error v -> Some (Kkind v))
     | (Type_variant (cstrs1, rep1), Type_variant (cstrs2, rep2)) ->
         if mark then begin
           let mark usage cstrs =

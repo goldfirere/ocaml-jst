@@ -159,9 +159,9 @@ let typevars ppf vs =
   List.iter (fun x -> fprintf ppf " %a" Pprintast.tyvar x.txt) vs
 ;;
 
-let layout_array i ppf layouts =
-  array (i+1) (fun _ ppf l -> fprintf ppf "%a;@ " Layouts.Layout.format l)
-    ppf layouts
+let kkind_array i ppf kkinds =
+  array (i+1) (fun _ ppf l -> fprintf ppf "%a;@ " Kkind.format l)
+    ppf kkinds
 
 let tag ppf = let open Types in function
   | Ordinary {src_index;runtime_tag} ->
@@ -170,17 +170,17 @@ let tag ppf = let open Types in function
 
 let variant_representation i ppf = let open Types in function
   | Variant_unboxed l ->
-    line i ppf "Variant_unboxed %a\n" Layouts.Layout.format l
-  | Variant_boxed layouts ->
+    line i ppf "Variant_unboxed %a\n" Kkind.format l
+  | Variant_boxed kkinds ->
     line i ppf "Variant_boxed %a\n"
-      (array (i+1) (fun _ ppf -> layout_array (i+1) ppf)) layouts
+      (array (i+1) (fun _ ppf -> kkind_array (i+1) ppf)) kkinds
   | Variant_extensible -> line i ppf "Variant_inlined\n"
 
 let record_representation i ppf = let open Types in function
   | Record_unboxed l ->
-    line i ppf "Record_unboxed %a\n" Layouts.Layout.format l
-  | Record_boxed layouts ->
-    line i ppf "Record_boxed %a\n" (layout_array i) layouts
+    line i ppf "Record_unboxed %a\n" Kkind.format l
+  | Record_boxed kkinds ->
+    line i ppf "Record_boxed %a\n" (kkind_array i) kkinds
   | Record_inlined (t,v) ->
     line i ppf "Record_inlined (%a, %a)\n" tag t (variant_representation i) v
   | Record_float -> line i ppf "Record_float\n"
@@ -392,7 +392,7 @@ and expression i ppf x =
   | Texp_match (e, sort, l, _partial) ->
       line i ppf "Texp_match\n";
       expression i ppf e;
-      line i ppf "%a\n" Layouts.Layout.format (Layouts.Layout.of_sort sort);
+      line i ppf "%a\n" Kkind.format (Kkind.of_sort sort);
       list i case ppf l;
   | Texp_try (e, l) ->
       line i ppf "Texp_try\n";
@@ -436,7 +436,7 @@ and expression i ppf x =
   | Texp_sequence (e1, l, e2) ->
       line i ppf "Texp_sequence\n";
       expression i ppf e1;
-      line i ppf "%a\n" Layouts.Layout.format l;
+      line i ppf "%a\n" Kkind.format l;
       expression i ppf e2;
   | Texp_while {wh_cond; wh_cond_region; wh_body; wh_body_region} ->
       line i ppf "Texp_while\n";
@@ -903,7 +903,7 @@ and structure_item i ppf x =
   | Tstr_eval (e, l, attrs) ->
       line i ppf "Tstr_eval\n";
       attributes i ppf attrs;
-      line i ppf "%a\n" Layouts.Layout.format l;
+      line i ppf "%a\n" Kkind.format l;
       expression i ppf e;
   | Tstr_value (rf, l) ->
       line i ppf "Tstr_value %a\n" fmt_rec_flag rf;

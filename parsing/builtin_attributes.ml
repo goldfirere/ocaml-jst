@@ -388,7 +388,7 @@ let warn_on_literal_pattern attrs =
 let explicit_arity attrs =
   has_attribute ["ocaml.explicit_arity"; "explicit_arity"] attrs
 
-let layout attrs =
+let kkind attrs =
   List.find_map
     (fun a -> match a.attr_name.txt with
        | "ocaml.immediate"|"immediate" ->

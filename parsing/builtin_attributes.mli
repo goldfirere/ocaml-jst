@@ -30,7 +30,7 @@
     - ocaml.afl_inst_ratio
     - ocaml.flambda_o3
     - ocaml.flambda_oclassic
-    - layout attributes:
+    - kkind attributes:
       - ocaml.any
       - ocaml.value
       - ocaml.void
@@ -127,7 +127,7 @@ val filter_attributes :
 val warn_on_literal_pattern: Parsetree.attributes -> bool
 val explicit_arity: Parsetree.attributes -> bool
 
-val layout: Parsetree.attributes -> Asttypes.const_layout option
+val kkind: Parsetree.attributes -> Asttypes.const_kkind option
 
 val has_unboxed: Parsetree.attributes -> bool
 val has_boxed: Parsetree.attributes -> bool

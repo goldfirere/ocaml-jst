@@ -16,7 +16,6 @@
 (* Abstract syntax tree after typing *)
 
 open Asttypes
-open Layouts
 open Types
 
 (* Value expressions for the core language *)
@@ -114,7 +113,7 @@ and expression_desc =
       region : bool; curry : fun_curry_state;
       warnings : Warnings.state; }
   | Texp_apply of expression * (arg_label * apply_arg) list * apply_position
-  | Texp_match of expression * sort * computation case list * partial
+  | Texp_match of expression * Kkind.sort * computation case list * partial
   | Texp_try of expression * value case list
   | Texp_tuple of expression list
   | Texp_construct of
@@ -130,13 +129,13 @@ and expression_desc =
       expression * Longident.t loc * label_description * expression
   | Texp_array of expression list
   | Texp_ifthenelse of expression * expression * expression option
-  | Texp_sequence of expression * layout * expression
+  | Texp_sequence of expression * Kkind.t * expression
   | Texp_while of {
       wh_cond : expression;
       wh_cond_region : bool;
       wh_body : expression;
       wh_body_region : bool;
-      wh_body_layout : layout
+      wh_body_kkind : Kkind.t
     }
   | Texp_list_comprehension of
       expression * comprehension list
@@ -149,7 +148,7 @@ and expression_desc =
       for_to   : expression;
       for_dir  : direction_flag;
       for_body : expression;
-      for_body_layout : Layouts.layout;
+      for_body_kkind : Kkind.t;
       for_region : bool;
     }
   | Texp_send of expression * meth * apply_position
@@ -330,7 +329,7 @@ and structure_item =
   }
 
 and structure_item_desc =
-    Tstr_eval of expression * layout * attributes
+    Tstr_eval of expression * Kkind.t * attributes
   | Tstr_value of rec_flag * value_binding list
   | Tstr_primitive of value_description
   | Tstr_type of rec_flag * type_declaration list
@@ -359,7 +358,7 @@ and value_binding =
   {
     vb_pat: pattern;
     vb_expr: expression;
-    vb_sort: sort;
+    vb_sort: Kkind.sort;
     vb_attributes: attributes;
     vb_loc: Location.t;
   }
@@ -566,7 +565,7 @@ and type_declaration =
     typ_manifest: core_type option;
     typ_loc: Location.t;
     typ_attributes: attribute list;
-    typ_layout_annotation: const_layout option;
+    typ_kkind_annotation: const_kkind option;
    }
 
 and type_kind =
@@ -839,11 +838,11 @@ let rec iter_bound_idents
        d
 
 type full_bound_ident_action =
-  Ident.t -> string loc -> type_expr -> value_mode -> sort -> unit
+  Ident.t -> string loc -> type_expr -> value_mode -> Kkind.sort -> unit
 
 let iter_pattern_full ~both_sides_of_or f sort pat =
   let rec loop :
-    type k . full_bound_ident_action -> sort -> k general_pattern -> _ =
+    type k . full_bound_ident_action -> Kkind.sort -> k general_pattern -> _ =
     fun f sort pat ->
       match pat.pat_desc with
       (* Cases where we push the sort inwards: *)
@@ -862,21 +861,21 @@ let iter_pattern_full ~both_sides_of_or f sort pat =
             match cstr.cstr_repr with
             | Variant_unboxed _ -> [ sort ]
             | Variant_boxed _ | Variant_extensible ->
-              Array.to_list (Array.map Layout.sort_of_layout
-                                          cstr.cstr_arg_layouts)
+              Array.to_list (Array.map Kkind.sort_of_kkind
+                                          cstr.cstr_arg_kkinds)
           in
           List.iter2 (loop f) sorts patl
       | Tpat_record (lbl_pat_list, _) ->
           List.iter (fun (_, lbl, pat) ->
-            (loop f) (Layout.sort_of_layout lbl.lbl_layout) pat)
+            (loop f) (Kkind.sort_of_kkind lbl.lbl_kkind) pat)
             lbl_pat_list
       (* Cases where the inner things must be value: *)
-      | Tpat_variant (_, pat, _) -> Option.iter (loop f Sort.value) pat
-      | Tpat_tuple patl -> List.iter (loop f Sort.value) patl
+      | Tpat_variant (_, pat, _) -> Option.iter (loop f Kkind.Sort.value) pat
+      | Tpat_tuple patl -> List.iter (loop f Kkind.Sort.value) patl
         (* CR ccasinghino: tuple case to change when we allow non-values in
            tuples *)
-      | Tpat_array patl -> List.iter (loop f Sort.value) patl
-      | Tpat_lazy p | Tpat_exception p -> loop f Sort.value p
+      | Tpat_array patl -> List.iter (loop f Kkind.Sort.value) patl
+      | Tpat_lazy p | Tpat_exception p -> loop f Kkind.Sort.value p
       (* Cases without variables: *)
       | Tpat_any | Tpat_constant _ -> ()
   in
@@ -902,9 +901,9 @@ let pat_bound_idents_full sort pat =
 (* In these two, we don't know the sort, but the sort information isn't used so
    it's fine to lie. *)
 let pat_bound_idents_with_types pat =
-  rev_only_idents_and_types (rev_pat_bound_idents_full Sort.value pat)
+  rev_only_idents_and_types (rev_pat_bound_idents_full Kkind.Sort.value pat)
 let pat_bound_idents pat =
-  rev_only_idents (rev_pat_bound_idents_full Sort.value pat)
+  rev_only_idents (rev_pat_bound_idents_full Kkind.Sort.value pat)
 
 let rev_let_bound_idents bindings =
   let idents = ref [] in

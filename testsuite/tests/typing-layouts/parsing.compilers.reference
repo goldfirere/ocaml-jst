@@ -7,5 +7,5 @@ Error: This type ('a : value) should be an instance of type ('a0 : void)
 Line 2, characters 11-15:
 2 | type ('a : valu) t0 = 'a list;;
                ^^^^
-Error: Syntax error: layout expected.
+Error: Syntax error: kind expected.
 

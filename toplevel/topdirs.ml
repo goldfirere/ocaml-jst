@@ -18,7 +18,6 @@
 open Format
 open Misc
 open Longident
-open Layouts
 open Types
 open Toploop
 
@@ -233,7 +232,7 @@ let printer_type ppf typename =
 
 let match_simple_printer_type desc printer_type =
   Ctype.begin_def();
-  let ty_arg = Ctype.newvar Layout.value in
+  let ty_arg = Ctype.newvar Kkind.value in
   begin try
     Ctype.unify !toplevel_env
       (Ctype.newconstr printer_type [ty_arg])
@@ -247,7 +246,7 @@ let match_simple_printer_type desc printer_type =
 
 let match_generic_printer_type desc path args printer_type =
   Ctype.begin_def();
-  let args = List.map (fun _ -> Ctype.newvar Layout.value) args in
+  let args = List.map (fun _ -> Ctype.newvar Kkind.value) args in
   let ty_target = Ctype.newty (Tconstr (path, args, ref Mnil)) in
   let ty_args =
     List.map (fun ty_var -> Ctype.newconstr printer_type [ty_var]) args in
@@ -489,7 +488,7 @@ let () =
            { ext_type_path = path;
              ext_type_params = type_decl.type_params;
              ext_args = Cstr_tuple desc.cstr_args;
-             ext_arg_layouts = desc.cstr_arg_layouts;
+             ext_arg_kkinds = desc.cstr_arg_kkinds;
              ext_constant = desc.cstr_constant;
              ext_ret_type = ret_type;
              ext_private = Asttypes.Public;
@@ -522,7 +521,7 @@ let () =
          { ext_type_path = Predef.path_exn;
            ext_type_params = [];
            ext_args = Cstr_tuple desc.cstr_args;
-           ext_arg_layouts = desc.cstr_arg_layouts;
+           ext_arg_kkinds = desc.cstr_arg_kkinds;
            ext_constant = desc.cstr_constant;
            ext_ret_type = ret_type;
            ext_private = Asttypes.Public;

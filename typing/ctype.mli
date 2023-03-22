@@ -16,7 +16,6 @@
 (* Operations on core types *)
 
 open Asttypes
-open Layouts
 open Types
 
 exception Unify    of Errortrace.unification_error
@@ -57,10 +56,10 @@ val create_scope : unit -> int
 
 val newty: type_desc -> type_expr
 val new_scoped_ty: int -> type_desc -> type_expr
-val newvar: ?name:string -> layout -> type_expr
-val newvar2: ?name:string -> int -> layout -> type_expr
+val newvar: ?name:string -> Kkind.t -> type_expr
+val newvar2: ?name:string -> int -> Kkind.t -> type_expr
         (* Return a fresh variable *)
-val new_global_var: ?name:string -> layout -> type_expr
+val new_global_var: ?name:string -> Kkind.t -> type_expr
         (* Return a fresh variable, bound at toplevel
            (as type variables ['a] in type constraints). *)
 val newobj: type_expr -> type_expr
@@ -152,7 +151,7 @@ val instance_list: type_expr list -> type_expr list
         (* Take an instance of a list of type schemes *)
 val new_local_type:
         ?loc:Location.t -> ?manifest_and_scope:(type_expr * int) ->
-        layout -> type_declaration
+        Kkind.t -> type_declaration
 val existential_name: constructor_description -> type_expr -> string
 val instance_constructor:
         ?in_pattern:Env.t ref * int ->
@@ -238,11 +237,11 @@ val unify_gadt:
 val unify_var: Env.t -> type_expr -> type_expr -> unit
         (* Same as [unify], but allow free univars when first type
            is a variable. *)
-val unify_delaying_layout_checks :
-  Env.t -> type_expr -> type_expr -> (type_expr * layout) list
-        (* Same as [unify], but don't check layout compatibility.  Instead,
+val unify_delaying_kkind_checks :
+  Env.t -> type_expr -> type_expr -> (type_expr * Kkind.t) list
+        (* Same as [unify], but don't check kkind compatibility.  Instead,
            return the checks that would have been performed.  For use in
-           typedecl before well-foundedness checks have made layout checking
+           typedecl before well-foundedness checks have made kkind checking
            safe. *)
 
 val filter_arrow: Env.t -> type_expr -> arg_label -> force_tpoly:bool ->
@@ -303,7 +302,7 @@ type filter_method_failure =
   | Unification_error of Errortrace.unification_error
   | Not_a_method
   | Not_an_object of type_expr
-  | Not_a_value of Layout.Violation.t
+  | Not_a_value of Kkind.Violation.t
 
 exception Filter_method_failed of filter_method_failure
 
@@ -417,8 +416,8 @@ val nondep_cltype_declaration:
 val is_contractive: Env.t -> Path.t -> bool
 val normalize_type: type_expr -> unit
 
-val remove_mode_and_layout_variables: type_expr -> unit
-        (* Ensure mode and layout variables are fully determined *)
+val remove_mode_and_kkind_variables: type_expr -> unit
+        (* Ensure mode and kkind variables are fully determined *)
 
 val nongen_schema: Env.t -> type_expr -> bool
         (* Check whether the given type scheme contains no non-generic
@@ -467,26 +466,26 @@ val mcomp : Env.t -> type_expr -> type_expr -> unit
 
 val get_unboxed_type_representation : Env.t -> type_expr -> type_expr
 
-(* Cheap upper bound on layout.  Will not expand unboxed types - call
-   [type_layout] if that's needed. *)
-val estimate_type_layout : Env.t ->  type_expr -> layout
-val type_layout : Env.t -> type_expr -> layout
+(* Cheap upper bound on kkind.  Will not expand unboxed types - call
+   [type_kkind] if that's needed. *)
+val estimate_type_kkind : Env.t ->  type_expr -> Kkind.t
+val type_kkind : Env.t -> type_expr -> Kkind.t
 
 (* Find a type's sort (constraining it to be an arbitrary sort variable, if
    needed) *)
-val type_sort : Env.t -> type_expr -> (sort, Layout.Violation.t) result
+val type_sort : Env.t -> type_expr -> (Kkind.sort, Kkind.Violation.t) result
 
-(* Layout checking. [constrain_type_layout] will update the layout of type
-   variables to make the check true, if possible.  [check_decl_layout] and
-   [check_type_layout] won't, but will still instantiate sort variables.
+(* Kkind checking. [constrain_type_kkind] will update the kkind of type
+   variables to make the check true, if possible.  [check_decl_kkind] and
+   [check_type_kkind] won't, but will still instantiate sort variables.
 
-   For convenience, on success these functions return the most precise layout we
+   For convenience, on success these functions return the most precise kkind we
    found for the given type during checking (which may be an upper bound). *)
 (* CJC XXX errors: probably changes these to raise on error, like unify, when we
    work on errors *)
-val check_decl_layout : Env.t -> type_declaration -> layout
-  -> (layout, Layout.Violation.t) result
-val check_type_layout : Env.t -> type_expr -> layout
-  -> (layout, Layout.Violation.t) result
-val constrain_type_layout : Env.t -> type_expr -> layout
-  -> (layout, Layout.Violation.t) result
+val check_decl_kkind : Env.t -> type_declaration -> Kkind.t
+  -> (Kkind.t, Kkind.Violation.t) result
+val check_type_kkind : Env.t -> type_expr -> Kkind.t
+  -> (Kkind.t, Kkind.Violation.t) result
+val constrain_type_kkind : Env.t -> type_expr -> Kkind.t
+  -> (Kkind.t, Kkind.Violation.t) result

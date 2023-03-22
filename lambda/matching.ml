@@ -89,7 +89,6 @@
 
 open Misc
 open Asttypes
-open Layouts
 open Types
 open Typedtree
 open Lambda
@@ -1755,11 +1754,11 @@ let get_key_constr = function
 
 let get_pat_args_constr p rem =
   match p with
-  | { pat_desc = Tpat_construct (_, {cstr_arg_layouts}, args, _) } ->
+  | { pat_desc = Tpat_construct (_, {cstr_arg_kkinds}, args, _) } ->
     (* CR layouts: This treatment of void can go when void is handled later in
        the compiler. *)
     (List.filteri (fun i _ ->
-       not (Layout.can_make_void cstr_arg_layouts.(i)))
+       not (Kkind.can_make_void cstr_arg_kkinds.(i)))
        args) @ rem
   | _ -> assert false
 
@@ -1775,7 +1774,7 @@ let get_expr_args_constr ~scopes head (arg, _mut) rem =
       if src_pos > last_pos then
         argl
       else if
-        Layout.can_make_void cstr.cstr_arg_layouts.(src_pos)
+        Kkind.can_make_void cstr.cstr_arg_kkinds.(src_pos)
       then
         make_args (src_pos + 1) runtime_pos
       else
@@ -2835,10 +2834,10 @@ let split_variant_cases (tag_lambda_list : ((int * bool) * lambda) list) =
 let split_extension_cases tag_lambda_list =
   let rec split_rec = function
     | [] -> ([], [])
-    | ({cstr_arg_layouts; cstr_tag}, act) :: rem -> (
+    | ({cstr_arg_kkinds; cstr_tag}, act) :: rem -> (
         let consts, nonconsts = split_rec rem in
         let all_void =
-          Array.for_all Layout.can_make_void cstr_arg_layouts
+          Array.for_all Kkind.can_make_void cstr_arg_kkinds
         in
         match all_void, cstr_tag with
         | true, Extension (path,_) -> ((path,act) :: consts, nonconsts)
@@ -3773,7 +3772,7 @@ let for_let ~scopes loc param_void_k param param_sort pat body_kind body =
         let ids_with_kinds =
           List.filter_map
             (fun (id, _, typ, sort) ->
-               if Layout.can_make_void (Layout.of_sort sort)
+               if Kkind.can_make_void (Kkind.of_sort sort)
                then None
                else Some (id, Typeopt.value_kind pat.pat_env typ))
             catch_ids

@@ -2,7 +2,7 @@
    * expect
 *)
 
-(* Tests for layouts in algebraic datatypes *)
+(* Tests for kkinds in algebraic datatypes *)
 
 type t_void [@@void]
 type t_any [@@any]

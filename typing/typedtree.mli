@@ -182,18 +182,19 @@ and fun_curry_state =
             functions, which might result in this arg no longer being
             final *)
 
-(** Layouts in the typed tree: Compilation of the typed tree to lambda sometimes
-    requires layout information.  Our approach is to propagate layout
-    information inward during compilation.  This requires us to annotate places
-    in the typed tree where the layout of a subexpression is not determined by
-    the layout of the expression containing it.  For example, to the left of a
-    semicolon, or in value_bindings.
+(** Kkinds in the typed tree: Compilation of the typed tree to lambda
+    sometimes requires kkind information.  Our approach is to
+    propagate kkind information inward during compilation.  This
+    requires us to annotate places in the typed tree where the kkind
+    of a type of a subexpression is not determined by the kkind of the
+    type of the expression containing it.  For example, to the left of
+    a semicolon, or in value_bindings.
 
     CR ccasinghino: Some of these are mainly needed for void (e.g., left of a
     semicolon).  If we redo how void is compiled, perhaps we can drop those.  On
     the other hand, there are some places we're not annotating now (e.g.,
     function arguments) that will need annotations in the future because we'll
-    allow other layouts there.
+    allow other kkinds there.
 *)
 and expression_desc =
     Texp_ident of
@@ -240,7 +241,7 @@ and expression_desc =
                          (Labelled "y", Some (Texp_constant Const_int 3))
                         ])
          *)
-  | Texp_match of expression * Layouts.sort * computation case list * partial
+  | Texp_match of expression * Kkind.sort * computation case list * partial
         (** match E0 with
             | P1 -> E1
             | P2 | exception P3 -> E2
@@ -281,13 +282,13 @@ and expression_desc =
       expression * Longident.t loc * Types.label_description * expression
   | Texp_array of expression list
   | Texp_ifthenelse of expression * expression * expression option
-  | Texp_sequence of expression * Layouts.layout * expression
+  | Texp_sequence of expression * Kkind.t * expression
   | Texp_while of {
       wh_cond : expression;
       wh_cond_region : bool; (* False means allocates in outer region *)
       wh_body : expression;
       wh_body_region : bool;  (* False means allocates in outer region *)
-      wh_body_layout : Layouts.layout
+      wh_body_kkind : Kkind.t
     }
   | Texp_list_comprehension of
       expression * comprehension list
@@ -300,7 +301,7 @@ and expression_desc =
       for_to   : expression;
       for_dir  : direction_flag;
       for_body : expression;
-      for_body_layout : Layouts.layout;
+      for_body_kkind : Kkind.t;
       for_region : bool;
       (* for_region = true means we create a region for the body.  false means
          it may allocated in the containing region *)
@@ -493,7 +494,7 @@ and structure_item =
   }
 
 and structure_item_desc =
-    Tstr_eval of expression * Layouts.layout * attributes
+    Tstr_eval of expression * Kkind.t * attributes
   | Tstr_value of rec_flag * value_binding list
   | Tstr_primitive of value_description
   | Tstr_type of rec_flag * type_declaration list
@@ -522,7 +523,7 @@ and value_binding =
   {
     vb_pat: pattern;
     vb_expr: expression;
-    vb_sort: Layouts.sort;
+    vb_sort: Kkind.sort;
     vb_attributes: attributes;
     vb_loc: Location.t;
   }
@@ -731,7 +732,7 @@ and type_declaration =
     typ_manifest: core_type option;
     typ_loc: Location.t;
     typ_attributes: attributes;
-    typ_layout_annotation: const_layout option;
+    typ_kkind_annotation: const_kkind option;
    }
 
 and type_kind =
@@ -903,7 +904,7 @@ val exists_pattern: (pattern -> bool) -> pattern -> bool
 val let_bound_idents: value_binding list -> Ident.t list
 val let_bound_idents_with_modes_and_sorts:
   value_binding list
-  -> (Ident.t * (Location.t * Types.value_mode * Layouts.sort) list) list
+  -> (Ident.t * (Location.t * Types.value_mode * Kkind.sort) list) list
 
 (** Alpha conversion of patterns *)
 val alpha_pat:
@@ -916,8 +917,8 @@ val pat_bound_idents: 'k general_pattern -> Ident.t list
 val pat_bound_idents_with_types:
   'k general_pattern -> (Ident.t * Types.type_expr) list
 val pat_bound_idents_full:
-  Layouts.sort -> 'k general_pattern
-  -> (Ident.t * string loc * Types.type_expr * Layouts.sort) list
+  Kkind.sort -> 'k general_pattern
+  -> (Ident.t * string loc * Types.type_expr * Kkind.sort) list
 
 (** Splits an or pattern into its value (left) and exception (right) parts. *)
 val split_pattern:

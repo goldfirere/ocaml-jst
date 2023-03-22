@@ -24,9 +24,6 @@
 (** Asttypes exposes basic definitions shared both by Parsetree and Types. *)
 open Asttypes
 
-(** Layouts contains support for type layouts *)
-open Layouts
-
 (** Type expressions for the core language.
 
     The [type_desc] variant defines all the possible type expressions one can
@@ -65,7 +62,7 @@ type field_kind
 type commutable
 
 and type_desc =
-  | Tvar of { name : string option; layout : layout }
+  | Tvar of { name : string option; kkind : Kkind.t }
   (** [Tvar (Some "a")] ==> ['a] or ['_a]
       [Tvar None]       ==> [_] *)
 
@@ -124,7 +121,7 @@ and type_desc =
   | Tvariant of row_desc
   (** Representation of polymorphic variants, see [row_desc]. *)
 
-  | Tunivar of { name : string option; layout : layout }
+  | Tunivar of { name : string option; kkind : Kkind.t }
   (** Occurrence of a type variable introduced by a
       forall quantifier / [Tpoly]. *)
 
@@ -502,33 +499,33 @@ type type_declaration =
 and type_decl_kind = (label_declaration, constructor_declaration) type_kind
 
 and ('lbl, 'cstr) type_kind =
-    Type_abstract of {layout : layout}
-  (* The layout here is authoritative if the manifest is [None].  Otherwise,
-     it's an upper bound; look at the manifest for the most precise layout. *)
+    Type_abstract of {kkind : Kkind.t}
+  (* The kkind here is authoritative if the manifest is [None].  Otherwise,
+     it's an upper bound; look at the manifest for the most precise kkind. *)
   | Type_record of 'lbl list  * record_representation
   | Type_variant of 'cstr list * variant_representation
   | Type_open
 
 and tag = Ordinary of {src_index: int;  (* Unique name (per type) *)
                        runtime_tag: int}    (* The runtime tag *)
-        | Extension of Path.t * layout array
+        | Extension of Path.t * Kkind.t array
 
 and record_representation =
-  | Record_unboxed of layout
+  | Record_unboxed of Kkind.t
   | Record_inlined of tag * variant_representation
   (* For an inlined record, we record the representation of the variant that
      contains it and the tag of the relevant constructor of that variant. *)
-  | Record_boxed of layout array
+  | Record_boxed of Kkind.t array
   | Record_float (* All fields are floats *)
 
 
-(* For unboxed variants, we record the layout of the mandatory single argument.
-   For boxed variants, we record the layouts for the arguments of each
+(* For unboxed variants, we record the kkind of the mandatory single argument.
+   For boxed variants, we record the kkinds for the arguments of each
    constructor.  For boxed inlined records, this is just a length 1 array with
-   the layout of the record itself, not the layouts of each field.  *)
+   the kkind of the record itself, not the kkinds of each field.  *)
 and variant_representation =
-  | Variant_unboxed of layout
-  | Variant_boxed of layout array array
+  | Variant_unboxed of Kkind.t
+  | Variant_boxed of Kkind.t array array
   | Variant_extensible
 
 and global_flag =
@@ -542,7 +539,7 @@ and label_declaration =
     ld_mutable: mutable_flag;
     ld_global: global_flag;
     ld_type: type_expr;
-    ld_layout : layout;
+    ld_kkind : Kkind.t;
     ld_loc: Location.t;
     ld_attributes: Parsetree.attributes;
     ld_uid: Uid.t;
@@ -562,15 +559,15 @@ and constructor_arguments =
   | Cstr_tuple of (type_expr * global_flag) list
   | Cstr_record of label_declaration list
 
-val kind_abstract : layout:layout -> ('a,'b) type_kind
+val kind_abstract : kkind:Kkind.t -> ('a,'b) type_kind
 val kind_abstract_value : ('a,'b) type_kind
 val kind_abstract_immediate : ('a,'b) type_kind
 val kind_abstract_any : ('a,'b) type_kind
 val decl_is_abstract : type_declaration -> bool
 
-(** Type kinds provide an upper bound on layouts of a type (which is precise if
+(** Type kinds provide an upper bound on kkinds of a type (which is precise if
     the type has no manifest). *)
-val layout_bound_of_kind : ('a,'b) type_kind -> layout
+val kkind_bound_of_kind : ('a,'b) type_kind -> Kkind.t
 
 (* Returns the inner type, if unboxed. *)
 val decl_is_unboxed : type_declaration -> type_expr option
@@ -580,7 +577,7 @@ type extension_constructor =
     ext_type_path: Path.t;
     ext_type_params: type_expr list;
     ext_args: constructor_arguments;
-    ext_arg_layouts: layout array;
+    ext_arg_kkinds: Kkind.t array;
     ext_constant: bool;
     ext_ret_type: type_expr option;
     ext_private: private_flag;
@@ -690,7 +687,7 @@ type constructor_description =
     cstr_res: type_expr;                (* Type of the result *)
     cstr_existentials: type_expr list;  (* list of existentials *)
     cstr_args: (type_expr * global_flag) list;          (* Type of the arguments *)
-    cstr_arg_layouts: layout array;     (* Layouts of the arguments *)
+    cstr_arg_kkinds: Kkind.t array;     (* Kkinds of the arguments *)
     cstr_arity: int;                    (* Number of arguments *)
     cstr_tag: tag;                      (* Tag for heap blocks *)
     cstr_repr: variant_representation;  (* Repr of the outer variant *)
@@ -719,7 +716,7 @@ type label_description =
     lbl_arg: type_expr;                 (* Type of the argument *)
     lbl_mut: mutable_flag;              (* Is this a mutable field? *)
     lbl_global: global_flag;        (* Is this a nonlocal field? *)
-    lbl_layout : layout;                (* Layout of the argument *)
+    lbl_kkind : Kkind.t;                (* Kkind of the argument *)
     lbl_pos: int;                       (* Position in block *)
     lbl_num: int;                       (* Position in the type *)
     lbl_all: label_description array;   (* All the labels in this type *)
@@ -775,14 +772,14 @@ val undo_compress: snapshot -> unit
 
 val link_type: type_expr -> type_expr -> unit
         (* Set the desc field of [t1] to [Tlink t2], logging the old value if
-           there is an active snapshot.  Any layout information in [t1]'s desc
+           there is an active snapshot.  Any kkind information in [t1]'s desc
            is thrown away without checking - calls to this in unification should
-           first check that [t2]'s layout is a sublayout of [t1]. *)
+           first check that [t2]'s kkind is a subkkind of [t1]. *)
 val set_type_desc: type_expr -> type_desc -> unit
         (* Set directly the desc field, without sharing *)
 val set_level: type_expr -> int -> unit
 val set_scope: type_expr -> int -> unit
-val set_var_layout: type_expr -> layout -> unit
+val set_var_kkind: type_expr -> Kkind.t -> unit
         (* May only be called on Tvars *)
 val set_name:
     (Path.t * type_expr list) option ref ->

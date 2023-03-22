@@ -361,7 +361,7 @@ Error: This method has type 'b -> unit which is less general than
        'a has layout value, which is not a sublayout of immediate.
 |}];;
 
-(* CJC XXX add more tests here once you can annotate these types with layouts *)
+(* CJC XXX add more tests here once you can annotate these types with kkinds *)
 
 (*****************************************)
 (* Test 6: the layout check in unify_var *)
@@ -564,7 +564,7 @@ Error: This expression has type t_void but an expression was expected of type
 |}];;
 
 (*************************************************)
-(* Test 9: layouts are checked by "more general" *)
+(* Test 9: kkinds are checked by "more general" *)
 
 (* This hits the first linktype in moregen (no expansion required to see it's a
    var) *)
@@ -638,7 +638,7 @@ end;;
 Line 5, characters 4-7:
 5 |     t.v # baz10
         ^^^
-Error: Methods must have layout value.
+Error: Method types must have layout value.
        This expression has layout void, which does not overlap with value.
 |}]
 
@@ -1002,7 +1002,7 @@ type s16 = { lbl : s16 t16; } [@@unboxed]
 |}];;
 
 (* Test 17: expansion in [check_univars] *)
-(* This test isn't really layouts-specific, but it checks that the layout checks
+(* This test isn't really kkinds-specific, but it checks that the layout checks
    we've added in [Typecore.check_univars] don't choke when expansion is needed
    to see a variable *)
 type 'a t17 = 'a

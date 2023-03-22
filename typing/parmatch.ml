@@ -17,7 +17,6 @@
 
 open Misc
 open Asttypes
-open Layouts
 open Types
 open Typedtree
 
@@ -733,7 +732,7 @@ let close_variant env row =
       (orig_name, true) fields in
   if not closed || name != orig_name then begin
     let more' =
-      if static then Btype.newgenty Tnil else Btype.newgenvar Layout.value
+      if static then Btype.newgenty Tnil else Btype.newgenvar Kkind.value
     in
     (* this unification cannot fail *)
     Ctype.unify env more

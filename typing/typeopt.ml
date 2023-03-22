@@ -16,7 +16,6 @@
 (* Auxiliaries for type-based optimizations, e.g. array kinds *)
 
 open Path
-open Layouts
 open Types
 open Asttypes
 open Typedtree
@@ -169,15 +168,15 @@ let bigarray_type_kind_and_layout env typ =
   | _ ->
       (Pbigarray_unknown, Pbigarray_unknown_layout)
 
-let value_kind_of_value_layout layout =
-  match Layout.constrain_default_void layout with
+let value_kind_of_value_kkind kkind =
+  match Kkind.constrain_default_void kkind with
   | Value -> Pgenval
   | Immediate -> Pintval
   | Immediate64 ->
     if !Clflags.native_code && Sys.word_size = 64 then Pintval else Pgenval
   | Any | Void -> assert false
 
-(* Invariant: [value_kind] functions may only be called on types with layout
+(* Invariant: [value_kind] functions may only be called on types with kkind
    value. *)
 let rec value_kind env ~visited ~depth ~num_nodes_visited ty
   : int * value_kind =
@@ -187,7 +186,7 @@ let rec value_kind env ~visited ~depth ~num_nodes_visited ty
     || num_nodes_visited >= 30
   in
   (* CJC XXX remove this check once all of jane builds *)
-  begin match Ctype.(check_type_layout env (correct_levels ty) Layout.void) with
+  begin match Ctype.(check_type_kkind env (correct_levels ty) Kkind.void) with
   | Ok _ -> assert false
   | _ -> ()
   end;
@@ -214,7 +213,7 @@ let rec value_kind env ~visited ~depth ~num_nodes_visited ty
       let kind = (Env.find_type p env).type_kind in
       if cannot_proceed () then
         num_nodes_visited,
-        value_kind_of_value_layout (layout_bound_of_kind kind)
+        value_kind_of_value_kkind (kkind_bound_of_kind kind)
       else
         let visited = Numbers.Int.Set.add (get_id ty) visited in
         match kind with
@@ -223,13 +222,13 @@ let rec value_kind env ~visited ~depth ~num_nodes_visited ty
         | Type_record (labels, rep) ->
           let depth = depth + 1 in
           value_kind_record env ~visited ~depth ~num_nodes_visited labels rep
-        | Type_abstract {layout} ->
+        | Type_abstract {kkind} ->
           num_nodes_visited,
-          value_kind_of_value_layout layout
+          value_kind_of_value_kkind kkind
         | Type_open -> num_nodes_visited, Pgenval
     with Not_found -> num_nodes_visited, Pgenval
       (* Safe to assume Pgenval in Not_found case because of the invariant
-         that [value_kind] is only called on types of layout value *)
+         that [value_kind] is only called on types of kkind value *)
     end
   | Ttuple fields ->
     if cannot_proceed () then
@@ -243,7 +242,7 @@ let rec value_kind env ~visited ~depth ~num_nodes_visited ty
              let num_nodes_visited = num_nodes_visited + 1 in
              (* CR ccasinghino - this is fine because voids are not allowed in
                 tuples.  When they are, we probably need to add a list of
-                layouts to Ttuple, as in variant_representation and
+                kkinds to Ttuple, as in variant_representation and
                 record_representation *)
              let num_nodes_visited, kind =
                value_kind env ~visited ~depth ~num_nodes_visited field
@@ -257,7 +256,7 @@ let rec value_kind env ~visited ~depth ~num_nodes_visited ty
     (* CJC XXX this was missing - only caught in 4.14 merge.  Am I missing other
        cases. *)
     num_nodes_visited,
-    if Result.is_ok (Ctype.check_type_layout env scty Layout.immediate)
+    if Result.is_ok (Ctype.check_type_kkind env scty Kkind.immediate)
     then Pintval else Pgenval
   | _ ->
     num_nodes_visited, Pgenval
@@ -273,10 +272,10 @@ and value_kind_variant env ~visited ~depth ~num_nodes_visited
         value_kind env ~visited ~depth ~num_nodes_visited ty
       | _ -> assert false
     end
-  | Variant_boxed layouts ->
+  | Variant_boxed kkinds ->
     let depth = depth + 1 in
     let for_one_constructor (constructor : Types.constructor_declaration)
-          layouts ~depth ~num_nodes_visited =
+          kkinds ~depth ~num_nodes_visited =
       let num_nodes_visited = num_nodes_visited + 1 in
       match constructor.cd_args with
       | Cstr_tuple fields ->
@@ -284,7 +283,7 @@ and value_kind_variant env ~visited ~depth ~num_nodes_visited
           List.fold_left
             (fun (num_nodes_visited, idx, kinds) (ty,_) ->
                let num_nodes_visited = num_nodes_visited + 1 in
-               if Layout.equate layouts.(idx) Layout.void then
+               if Kkind.equate kkinds.(idx) Kkind.void then
                  (num_nodes_visited, idx+1, kinds)
                else
                  let num_nodes_visited, kind =
@@ -301,7 +300,7 @@ and value_kind_variant env ~visited ~depth ~num_nodes_visited
               (label:Types.label_declaration) ->
               let num_nodes_visited = num_nodes_visited + 1 in
               let num_nodes_visited, kinds, field_mutable =
-                if Layout.(equate void label.ld_layout)
+                if Kkind.(equate void label.ld_kkind)
                 then (num_nodes_visited, kinds, Asttypes.Immutable)
                 else
                   let (num_nodes_visited, kind) =
@@ -328,7 +327,7 @@ and value_kind_variant env ~visited ~depth ~num_nodes_visited
                 next_const, consts, next_tag, non_consts) ->
           let (is_mutable, num_nodes_visited), fields =
             for_one_constructor constructor ~depth ~num_nodes_visited
-              layouts.(idx)
+              kkinds.(idx)
           in
           if is_mutable then idx+1, None
           else if List.compare_length_with fields 0 = 0 then
@@ -370,7 +369,7 @@ and value_kind_record env ~visited ~depth ~num_nodes_visited
             (label:Types.label_declaration) ->
             let num_nodes_visited = num_nodes_visited + 1 in
             let num_nodes_visited, kinds, field_mutable =
-              if Layout.(equate void label.ld_layout) then
+              if Kkind.(equate void label.ld_kkind) then
                 (num_nodes_visited, kinds, Asttypes.Immutable)
               else
                 let (num_nodes_visited, kind) =

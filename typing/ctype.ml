@@ -17,7 +17,6 @@
 
 open Misc
 open Asttypes
-open Layouts
 open Types
 open Btype
 open Errortrace
@@ -236,13 +235,13 @@ let proper_abbrevs path tl abbrev =
 let newty desc              = newty2 ~level:!current_level desc
 let new_scoped_ty scope desc = newty3 ~level:!current_level ~scope desc
 
-let newvar ?name layout =
-  newty2 ~level:!current_level (Tvar { name; layout })
-let newvar2 ?name level layout = newty2 ~level (Tvar { name; layout })
-let new_global_var ?name layout =
-  newty2 ~level:!global_level (Tvar { name; layout })
-let newstub ~scope layout =
-  newty3 ~level:!current_level ~scope (Tvar { name = None; layout })
+let newvar ?name kkind =
+  newty2 ~level:!current_level (Tvar { name; kkind })
+let newvar2 ?name level kkind = newty2 ~level (Tvar { name; kkind })
+let new_global_var ?name kkind =
+  newty2 ~level:!global_level (Tvar { name; kkind })
+let newstub ~scope kkind =
+  newty3 ~level:!current_level ~scope (Tvar { name = None; kkind })
 
 let newobj fields      = newty (Tobject (fields, ref None))
 
@@ -331,38 +330,38 @@ let without_generating_equations f =
     Misc.protect_refs [ Misc.R (umode, new_umode) ] f
 
 
-(* Unification generally must check that the layouts of the two types being
-   unified agree.  However, sometimes we need to delay or skip these layout
-   checks, and this is tracked by the [layout_unification_mode] in [lmode].
+(* Unification generally must check that the kkinds of the two types being
+   unified agree.  However, sometimes we need to delay or skip these kkind
+   checks, and this is tracked by the [kkind_unification_mode] in [lmode].
 
    - [Perform_checks] is the usual case where we just do the checks.
 
    - [Delay_checks] is for when we want to delay checks to be performed later.
      Unification sometimes occurs before the checking for circular /
-     ill-founded types.  Layout checking does things that blow up on those
+     ill-founded types.  Kkind checking does things that blow up on those
      types.  So we save the checks that would be done and do them after the
      circularity checking.
 
    - [Skip_checks] is for when we want to skip the checks entirely.  Sometimes
-     unification is reached through apply/subst in contexts that make layout
+     unification is reached through apply/subst in contexts that make kkind
      checking unnecessary.  For now, we're only using this in the more specific
      case that apply is reached through [Subst.ctype_apply_env_empty], because
      the empty environment also makes it impossible for us to perform the
      relevant checks.
 *)
-type layout_unification_mode =
+type kkind_unification_mode =
   | Perform_checks
-  | Delay_checks of (type_expr * layout) list ref
+  | Delay_checks of (type_expr * Kkind.t) list ref
   | Skip_checks
 
 let lmode = ref Perform_checks
 
-let delay_layout_checks_in f =
+let delay_kkind_checks_in f =
   let r = ref [] in
   Misc.protect_refs [Misc.R (lmode, Delay_checks r)] f;
   !r
 
-let skip_layout_checks_in f =
+let skip_kkind_checks_in f =
   Misc.protect_refs [Misc.R (lmode, Skip_checks)] f
 
 (*** Checks for type definitions ***)
@@ -508,14 +507,14 @@ let rec filter_row_fields erase = function
 
 
 (* Ensure all mode variables are fully determined *)
-let remove_mode_and_layout_variables ty =
+let remove_mode_and_kkind_variables ty =
   let visited = ref TypeSet.empty in
   let rec go ty =
     if TypeSet.mem ty !visited then () else begin
       visited := TypeSet.add ty !visited;
       match get_desc ty with
-      | Tvar { layout } -> Layout.default_to_value layout
-      | Tunivar { layout } -> Layout.default_to_value layout
+      | Tvar { kkind } -> Kkind.default_to_value kkind
+      | Tunivar { kkind } -> Kkind.default_to_value kkind
       | Tarrow ((_,marg,mret),targ,tret,_) ->
          let _ = Alloc_mode.constrain_lower marg in
          let _ = Alloc_mode.constrain_lower mret in
@@ -596,7 +595,7 @@ let free_variables ?env ty =
   tl
 
 let closed_type ty =
-  remove_mode_and_layout_variables ty;
+  remove_mode_and_kkind_variables ty;
   match free_vars ty with
       []           -> ()
   | (v, real) :: _ -> raise (Non_closed (v, real))
@@ -1146,9 +1145,9 @@ let rec copy ?partial ?keep_names scope ty =
           else generic_level
     in
     if forget <> generic_level then
-      newty2 ~level:forget (Tvar { name = None; layout = Layout.any })
+      newty2 ~level:forget (Tvar { name = None; kkind = Kkind.any })
     else
-    let t = newstub ~scope:(get_scope ty) Layout.any in
+    let t = newstub ~scope:(get_scope ty) Kkind.any in
     For_copy.redirect_desc scope ty (Tsubst (t, None));
     let desc' =
       match desc with
@@ -1213,7 +1212,7 @@ let rec copy ?partial ?keep_names scope ty =
                       if not (eq_type more more') then
                         more' (* we've already made a copy *)
                       else
-                        newvar Layout.any
+                        newvar Kkind.any
                     in
                     let not_reither (_, f) =
                       match row_field_repr f with
@@ -1278,7 +1277,7 @@ let get_new_abstract_name s =
   if index = 0 && s <> "" && s.[String.length s - 1] <> '$' then s else
   Printf.sprintf "%s%d" s index
 
-let new_local_type ?(loc = Location.none) ?manifest_and_scope layout =
+let new_local_type ?(loc = Location.none) ?manifest_and_scope kkind =
   let manifest, expansion_scope =
     match manifest_and_scope with
       None -> None, Btype.lowest_level
@@ -1287,7 +1286,7 @@ let new_local_type ?(loc = Location.none) ?manifest_and_scope layout =
   {
     type_params = [];
     type_arity = 0;
-    type_kind = Type_abstract {layout};
+    type_kind = Type_abstract {kkind};
     type_private = Public;
     type_manifest = manifest;
     type_variance = [];
@@ -1313,13 +1312,13 @@ let instance_constructor ?in_pattern cstr =
         let process existential =
           (* CJC XXX - add test case that hits this once we have syntax
              for it *)
-          let layout =
+          let kkind =
             match get_desc existential with
-            | Tvar { layout } -> layout
-            | Tvariant _ -> Layout.value
+            | Tvar { kkind } -> kkind
+            | Tvariant _ -> Kkind.value
             | _ -> assert false
           in
-          let decl = new_local_type layout in
+          let decl = new_local_type kkind in
           let name = existential_name cstr existential in
           let (id, new_env) =
             Env.enter_type (get_new_abstract_name name) decl !env
@@ -1435,7 +1434,7 @@ let rec copy_sep ~cleanup_scope ~fixed ~free ~bound ~may_share
   let univars = free ty in
   if is_Tvar ty || may_share && TypeSet.is_empty univars then
     if get_level ty <> generic_level then ty else
-    let t = newstub ~scope:(get_scope ty) Layout.any in
+    let t = newstub ~scope:(get_scope ty) Kkind.any in
     delayed_copy :=
       lazy (Transient_expr.set_stub_desc t (Tlink (copy cleanup_scope ty)))
       :: !delayed_copy;
@@ -1446,7 +1445,7 @@ let rec copy_sep ~cleanup_scope ~fixed ~free ~bound ~may_share
     if dl <> [] && conflicts univars dl then raise Not_found;
     t
   with Not_found -> begin
-    let t = newstub ~scope:(get_scope ty) Layout.any in
+    let t = newstub ~scope:(get_scope ty) Kkind.any in
     let desc = get_desc ty in
     let visited =
       match desc with
@@ -1492,8 +1491,8 @@ let instance_poly' cleanup_scope ~keep_names fixed univars sch =
   (* In order to compute univars below, [sch] should not contain [Tsubst] *)
   let copy_var ty =
     match get_desc ty with
-      Tunivar { name; layout } ->
-        if keep_names then newty (Tvar { name; layout }) else newvar layout
+      Tunivar { name; kkind } ->
+        if keep_names then newty (Tvar { name; kkind }) else newvar kkind
     | _ -> assert false
   in
   let vars = List.map copy_var univars in
@@ -1571,7 +1570,7 @@ let subst env level priv abbrev oty params args body =
   if List.length params <> List.length args then raise Cannot_subst;
   let old_level = !current_level in
   current_level := level;
-  let body0 = newvar Layout.any in          (* Stub *)
+  let body0 = newvar Kkind.any in          (* Stub *)
   let undo_abbrev =
     match oty with
     | None -> fun () -> () (* No abbreviation added *)
@@ -1606,11 +1605,11 @@ let subst env level priv abbrev oty params args body =
    invariants on types are enforced (decreasing levels), and we don't
    care about efficiency here.
 *)
-(* CR ccasinghino: Can we actually just always ignore layouts in apply/subst?
+(* CR ccasinghino: Can we actually just always ignore kkinds in apply/subst?
 
    It seems like almost, but there may be cases where it would forget
    information.  See bug20 for an attempt (though we couldn't quite get it to
-   work.
+   work).
 *)
 let apply env params body args =
   try
@@ -1621,7 +1620,7 @@ let apply env params body args =
 let () =
   Subst.ctype_apply_env_empty :=
     fun params body args ->
-      skip_layout_checks_in (fun () -> apply Env.empty params body args)
+      skip_kkind_checks_in (fun () -> apply Env.empty params body args)
 
                               (****************************)
                               (*  Abbreviation expansion  *)
@@ -1879,17 +1878,17 @@ let get_unboxed_type_representation env ty =
   (* Do not give too much fuel: PR#7424 *)
   get_unboxed_type_representation env ty ty 100
 
-(* When computing a layout, we distinguish two cases because some callers might
-   want to update the layout.
-   - Layout: We compute layout, and the type wasn't a variable.
-   - Var: The type was a var, we return the layout and the type_expr it was in,
+(* When computing a kkind, we distinguish two cases because some callers might
+   want to update the kkind.
+   - Kkind: We compute the kkind, and the type wasn't a variable.
+   - Var: The type was a var, we return the kkind and the type_expr it was in,
      in case the caller wants to update it. *)
-type layout_result =
-  | Layout of layout
-  | TyVar of layout * type_expr
+type kkind_result =
+  | Kkind of Kkind.t
+  | TyVar of Kkind.t * type_expr
 
-let layout_of_result = function
-  | Layout l -> l
+let kkind_of_result = function
+  | Kkind l -> l
   | TyVar (l,_) -> l
 
 (* We assume here that [get_unboxed_type_representation] has already been
@@ -1899,13 +1898,13 @@ let layout_of_result = function
    Note that this really returns an upper bound, and in particular returns [Any]
    in some edge cases (when [get_unboxed_type_representation] ran out of fuel,
    or when the type is a Tconstr that is missing from the Env). *)
-let rec estimate_type_layout env ty =
-  let open Layout in
+let rec estimate_type_kkind env ty =
+  let open Kkind in
   match get_desc ty with
   | Tconstr(p, _, _) -> begin
       match Env.find_type p env with
-      | { type_kind = k } -> Layout (layout_bound_of_kind k)
-      | exception Not_found -> Layout any
+      | { type_kind = k } -> Kkind (kkind_bound_of_kind k)
+      | exception Not_found -> Kkind any
     end
   | Tvariant row ->
       (* if all labels are devoid of arguments, not a pointer *)
@@ -1917,24 +1916,24 @@ let rec estimate_type_layout env ty =
             | Rpresent (Some _) | Reither (false, _, _) -> true
             | _ -> false)
           (row_fields row)
-      then Layout value
-      else Layout immediate
-  | Tvar { layout } -> TyVar (layout, ty)
-  | Tarrow _ -> Layout value
-  | Ttuple _ -> Layout value
-  | Tobject _ -> Layout value
-  | Tfield _ -> Layout value
-  | Tnil -> Layout value
+      then Kkind value
+      else Kkind immediate
+  | Tvar { kkind } -> TyVar (kkind, ty)
+  | Tarrow _ -> Kkind value
+  | Ttuple _ -> Kkind value
+  | Tobject _ -> Kkind value
+  | Tfield _ -> Kkind value
+  | Tnil -> Kkind value
   | (Tlink _ | Tsubst _) -> assert false
-  | Tunivar { layout } -> Layout layout
-  | Tpoly (ty, _) -> estimate_type_layout env ty
-  | Tpackage _ -> Layout value
+  | Tunivar { kkind } -> Kkind kkind
+  | Tpoly (ty, _) -> estimate_type_kkind env ty
+  | Tpackage _ -> Kkind value
 
-(* For convenience, this returns the most precise layout we computed for the
+(* For convenience, this returns the most precise kkind we computed for the
    type (which may still be an upper bound).
 
    The "fuel" argument here is used because we're duplicating the loop of
-   `get_unboxed_type_representation`, but performing layout checking of each
+   `get_unboxed_type_representation`, but performing kkind checking of each
    step.  This allows to check examples like:
 
      type 'a t = 'a list
@@ -1943,83 +1942,83 @@ let rec estimate_type_layout env ty =
    Here, we want to see [s t] is value, and this only requires expanding once to
    see [t] is list and [s] is irrelvant.  But calling
    [get_unboxed_type_representation] itself would otherwise get into a nasty
-   loop trying to also expand [s], and then performing layout checking to ensure
+   loop trying to also expand [s], and then performing kkind checking to ensure
    it's a valid argument to [t].  (We believe there are still loops like this
    that can occur, though, and may need a more principled solution later).
 *)
-let rec constrain_type_layout ~fixed env ty1 layout2 fuel =
+let rec constrain_type_kkind ~fixed env ty1 kkind2 fuel =
   let constrain_unboxed ty1 =
-    match estimate_type_layout env ty1 with
-    | Layout layout1 -> Layout.sub layout1 layout2
-    | TyVar (layout1, ty) ->
-      if fixed then Layout.sub layout1 layout2
+    match estimate_type_kkind env ty1 with
+    | Kkind kkind1 -> Kkind.sub kkind1 kkind2
+    | TyVar (kkind1, ty) ->
+      if fixed then Kkind.sub kkind1 kkind2
       else
-        Result.map (fun layout1 -> set_var_layout ty layout1; layout1)
-          (Layout.intersection layout1 layout2)
+        Result.map (fun kkind1 -> set_var_kkind ty kkind1; kkind1)
+          (Kkind.intersection kkind1 kkind2)
   in
   (* This is an optimization to avoid unboxing if we can tell the constraint is
      satisfied from the type_kind *)
   match get_desc ty1 with
   | Tconstr(p, _args, _abbrev) -> begin
-      let layout_bound =
+      let kkind_bound =
         begin match Env.find_type p env with
-        | { type_kind = k; _ } -> layout_bound_of_kind k
-        | exception Not_found -> Layout.any
+        | { type_kind = k; _ } -> kkind_bound_of_kind k
+        | exception Not_found -> Kkind.any
         end
       in
-      match Layout.sub layout_bound layout2 with
+      match Kkind.sub kkind_bound kkind2 with
       | Ok _ as ok -> ok
       | Error _ as err when fuel < 0 -> err
       | Error _ as err ->
         begin match unbox_once env ty1 with
         | Not_unboxed ty1 -> constrain_unboxed ty1
-        | Unboxed ty1 -> constrain_type_layout ~fixed env ty1 layout2 (fuel - 1)
+        | Unboxed ty1 -> constrain_type_kkind ~fixed env ty1 kkind2 (fuel - 1)
         | Missing -> err
         end
     end
-  | Tpoly (ty, _) -> constrain_type_layout ~fixed env ty layout2 fuel
+  | Tpoly (ty, _) -> constrain_type_kkind ~fixed env ty kkind2 fuel
   | _ -> constrain_unboxed ty1
 
-let check_type_layout env ty layout =
-  constrain_type_layout ~fixed:true env ty layout 100
+let check_type_kkind env ty kkind =
+  constrain_type_kkind ~fixed:true env ty kkind 100
 
-let constrain_type_layout env ty layout =
-  constrain_type_layout ~fixed:false env ty layout 100
+let constrain_type_kkind env ty kkind =
+  constrain_type_kkind ~fixed:false env ty kkind 100
 
-let check_decl_layout env decl layout =
+let check_decl_kkind env decl kkind =
   match decl_is_unboxed decl with
-  | Some arg -> check_type_layout env arg layout
+  | Some arg -> check_type_kkind env arg kkind
   | None ->
-      match Layout.sub
-              (layout_bound_of_kind decl.type_kind) layout with
+      match Kkind.sub
+              (kkind_bound_of_kind decl.type_kind) kkind with
       | Ok _ as ok -> ok
       | Error _ as err ->
           match decl.type_manifest with
           | None -> err
-          | Some ty -> check_type_layout env ty layout
+          | Some ty -> check_type_kkind env ty kkind
 
 (* CJC XXX errors: locations and better error reporting.  Maybe this should take
    in a trace_exn? *)
-let constrain_type_layout_exn env texn ty layout =
-  match constrain_type_layout env ty layout with
+let constrain_type_kkind_exn env texn ty kkind =
+  match constrain_type_kkind env ty kkind with
   | Ok _ -> ()
-  | Error err -> raise_for texn (Bad_layout (ty,err))
+  | Error err -> raise_for texn (Bad_kkind (ty,err))
 
-let estimate_type_layout env typ =
-  layout_of_result (estimate_type_layout env typ)
+let estimate_type_kkind env typ =
+  kkind_of_result (estimate_type_kkind env typ)
 
-let type_layout env ty =
-  estimate_type_layout env (get_unboxed_type_representation env ty)
+let type_kkind env ty =
+  estimate_type_kkind env (get_unboxed_type_representation env ty)
 
 (* CR ccasinghino perhaps this should take in some information about why
    we think a sort is required, to put in the error. *)
 let type_sort env ty =
-  let sort = Sort.new_var () in
-  match constrain_type_layout env ty (Layout.of_sort sort) with
+  let sort = Kkind.Sort.new_var () in
+  match constrain_type_kkind env ty (Kkind.of_sort sort) with
   | Ok _ -> Ok sort
   | Error _ as e -> e
 
-(* Note: Because [estimate_type_layout] actually returns an upper bound, this
+(* Note: Because [estimate_type_kkind] actually returns an upper bound, this
    function computes an innaccurate intersection in some cases.
 
    This is OK because of where it is used, which is related to gadt equations.
@@ -2029,23 +2028,23 @@ let type_sort env ty =
    in some cases where its not (this will happen when pattern matching on a
    "false" GADT pattern), but not to say the intersection is empty if it isn't.
 *)
-let rec intersect_type_layout env ty1 layout2 =
+let rec intersect_type_kkind env ty1 kkind2 =
   let intersect_unboxed ty1 =
-    Layout.intersection (estimate_type_layout env ty1) layout2
+    Kkind.intersection (estimate_type_kkind env ty1) kkind2
   in
   match get_desc ty1 with
-  | Tpoly (ty, _) -> intersect_type_layout env ty layout2
+  | Tpoly (ty, _) -> intersect_type_kkind env ty kkind2
   | _ ->
-    (* [intersect_type_layout] is called rarely, so we don't bother with trying
-       to avoid this call as in [constrain_type_layout] *)
+    (* [intersect_type_kkind] is called rarely, so we don't bother with trying
+       to avoid this call as in [constrain_type_kkind] *)
     let ty1 = get_unboxed_type_representation env ty1 in
     intersect_unboxed ty1
 
-(* See comment on [layout_unification_mode] *)
-let unification_layout_check env ty layout =
+(* See comment on [kkind_unification_mode] *)
+let unification_kkind_check env ty kkind =
   match !lmode with
-  | Perform_checks -> constrain_type_layout_exn env Unify ty layout
-  | Delay_checks r -> r := (ty,layout) :: !r
+  | Perform_checks -> constrain_type_kkind_exn env Unify ty kkind
+  | Delay_checks r -> r := (ty,kkind) :: !r
   | Skip_checks -> ()
 
 (* Recursively expand the head of a type.
@@ -2380,8 +2379,8 @@ let univar_pairs = ref []
 let polyfy env ty vars =
   let subst_univar scope ty =
     match get_desc ty with
-    | Tvar { name; layout } when get_level ty = generic_level ->
-        let t = newty (Tunivar { name; layout }) in
+    | Tvar { name; kkind } when get_level ty = generic_level ->
+        let t = newty (Tunivar { name; kkind }) in
         For_copy.redirect_desc scope ty (Tsubst (t, None));
         Some t
     | _ -> None
@@ -2484,9 +2483,9 @@ let get_gadt_equations_level () =
    They need to be removed using this function *)
 let reify env t =
   let fresh_constr_scope = get_gadt_equations_level () in
-  let create_fresh_constr lev name layout =
+  let create_fresh_constr lev name kkind =
     let name = match name with Some s -> "$'"^s | _ -> "$" in
-    let decl = new_local_type layout in
+    let decl = new_local_type kkind in
     let (id, new_env) =
       Env.enter_type (get_new_abstract_name name) decl !env
         ~scope:fresh_constr_scope in
@@ -2500,9 +2499,9 @@ let reify env t =
     if TypeSet.mem ty !visited then () else begin
       visited := TypeSet.add ty !visited;
       match get_desc ty with
-        Tvar { name; layout } ->
+        Tvar { name; kkind } ->
           let level = get_level ty in
-          let path, t = create_fresh_constr level name layout in
+          let path, t = create_fresh_constr level name kkind in
           link_type ty t;
           if level < fresh_constr_scope then
             raise_for Unify (Escape (escape (Constructor path)))
@@ -2511,9 +2510,9 @@ let reify env t =
             if is_fixed r then iterator (row_more r) else
             let m = row_more r in
             match get_desc m with
-              Tvar { name; layout }  ->
+              Tvar { name; kkind }  ->
                 let level = get_level m in
-                let path, t = create_fresh_constr level name layout in
+                let path, t = create_fresh_constr level name kkind in
                 let row =
                   let fixed = Some (Reified path) in
                   create_row ~fields:[] ~more:t ~fixed
@@ -2546,12 +2545,12 @@ let non_aliasable p decl =
 
 (* This checks whether a gadt equation can be added for a type.
 
-   The `for_layout_eqn` parameter indicates whether this is an equation that
-   just modifies a layout, or a normal gadt equation (see add_layout_equation).
+   The `for_kkind_eqn` parameter indicates whether this is an equation that
+   just modifies a kkind, or a normal gadt equation (see add_kkind_equation).
 
-   In the layout case, we don't check that the type is not non_aliasable.  The
+   In the kkind case, we don't check that the type is not non_aliasable.  The
    non_aliasable check serves two purposes for gadt equations, neither of which
-   is needed in the layout case:
+   is needed in the kkind case:
 
    1) It restricts gadt equations for abstract types defined in the current
    module.  This is actually unnecessary even for normal gadt equations and may
@@ -2559,23 +2558,23 @@ let non_aliasable p decl =
 
    2) It restricts gadt equations on pervasives, which a hacky implementation of
    the fact that every type in the initial environment is incompatible with
-   every other type.  But its fine to refine the layout of these types (and we
-   want to in some cases, like giving int32 the layout immediate64 on
+   every other type.  But its fine to refine the kkind of these types (and we
+   want to in some cases, like giving int32 the kkind immediate64 on
    appropriate platforms).
 
    CR layouts: the non_aliasable check could really be combined with the
-   decl_is_abstract check, and both could be guarded by ~for_layout_eqn, allowing
-   the refinement of layouts of data types.  Write some tests cases and make
+   decl_is_abstract check, and both could be guarded by ~for_kkind_eqn, allowing
+   the refinement of kkinds of data types.  Write some tests cases and make
    that change.
 *)
-let is_instantiable env ~for_layout_eqn p =
+let is_instantiable env ~for_kkind_eqn p =
   try
     let decl = Env.find_type p env in
     decl_is_abstract decl &&
     decl.type_private = Public &&
     decl.type_arity = 0 &&
     decl.type_manifest = None &&
-    (for_layout_eqn || not (non_aliasable p decl))
+    (for_kkind_eqn || not (non_aliasable p decl))
   with Not_found -> false
 
 
@@ -2616,7 +2615,7 @@ let rec mcomp type_pairs env t1 t2 =
   | (Tvar _, _)
   | (_, Tvar _)  ->
       ()
-    (* CR ccasinghino: This could be made more precise based on layouts *)
+    (* CR ccasinghino: This could be made more precise based on kkinds *)
   | (Tconstr (p1, [], _), Tconstr (p2, [], _)) when Path.same p1 p2 ->
       ()
   | _ ->
@@ -2839,24 +2838,24 @@ let find_lowest_level ty =
 let find_expansion_scope env path =
   (Env.find_type path env).type_expansion_scope
 
-let layout_of_abstract_type_declaration env p =
+let kkind_of_abstract_type_declaration env p =
   try
     (* This lookup duplicates work already done in is_instantiable, which guards
        the case of unify3 that reaches this function.  Would be nice to
        eliminate the duplication, but is seems tricky to do so without
        complicating unify3. *)
     match (Env.find_type p env).type_kind with
-    | Type_abstract {layout} -> layout
+    | Type_abstract {kkind} -> kkind
     | _ -> assert false
   with
     Not_found -> assert false
 
-let add_layout_equation env destination layout1 =
-  (* Here we check whether the source and destination layouts intersect.  If
+let add_kkind_equation env destination kkind1 =
+  (* Here we check whether the source and destination kkinds intersect.  If
      they don't, we can give a type error.  If they do, and destination is
      abstract, we can improve type checking by assigning destination that
-     layout.  If destination is not abstract, we can't locally improve its
-     layout, so we're slightly incomplete.  *)
+     kkind.  If destination is not abstract, we can't locally improve its
+     kkind, so we're slightly incomplete.  *)
   (* CR ccasinghino:
 
      Stephen pointed out the following weird example:
@@ -2865,34 +2864,34 @@ let add_layout_equation env destination layout1 =
        type (_,_) eq = Refl : ('a, 'a) eq
        let f (Refl : (M.t, string) eq) = (Refl : (M.t, string) eq)
 
-     This type checks, both with layouts and with the old [@@immediate].
+     This type checks, both with kkinds and with the old [@@immediate].
      After pattern matching on Refl, you're in dead code, but it
      could get compiled very weirdly.
 
      He suggested the following alternative strategy:
 
      Rather than this intersection, constrain the destination to have the
-     appropriate layout:
+     appropriate kkind:
 
-       constrain_type_layout env destination layout1
+       constrain_type_kkind env destination kkind1
 
-     Then this layout gets used as the intersection does below.
+     Then this kkind gets used as the intersection does below.
 
      This would break some existing programs, but probably only bad ones?
   *)
-  match intersect_type_layout !env destination layout1 with
-  | Error err -> raise_for Unify (Bad_layout (destination,err))
+  match intersect_type_kkind !env destination kkind1 with
+  | Error err -> raise_for Unify (Bad_kkind (destination,err))
   (* CJC XXX errors rethink for new error system *)
-  | Ok layout -> begin
+  | Ok kkind -> begin
       match get_desc destination with
-      | Tconstr (p, _, _) when is_instantiable ~for_layout_eqn:true !env p ->
+      | Tconstr (p, _, _) when is_instantiable ~for_kkind_eqn:true !env p ->
         begin
           try
             let decl = Env.find_type p !env in
             match decl.type_kind with
-            | Type_abstract {layout=layout'} when
-                not (Layout.equate layout layout') ->
-              let decl = {decl with type_kind = Type_abstract {layout}} in
+            | Type_abstract {kkind=kkind'} when
+                not (Kkind.equate kkind kkind') ->
+              let decl = {decl with type_kind = Type_abstract {kkind}} in
               env := Env.add_local_type p decl !env
             | (Type_record _ | Type_variant _ | Type_open | Type_abstract _) -> ()
           with
@@ -2911,13 +2910,13 @@ let add_gadt_equation env source destination =
     let expansion_scope =
       Int.max (Path.scope source) (get_gadt_equations_level ())
     in
-    (* Layouts: computing the actual layout here is required, not just for
-       efficiency.  When we check the layout later, we may not be able to see
+    (* Kkinds: computing the actual kkind here is required, not just for
+       efficiency.  When we check the kkind later, we may not be able to see
        the local equation because of its level. *)
-    let layout = layout_of_abstract_type_declaration !env source in
-    add_layout_equation env destination layout;
+    let kkind = kkind_of_abstract_type_declaration !env source in
+    add_kkind_equation env destination kkind;
     let decl =
-      new_local_type ~manifest_and_scope:(destination, expansion_scope) layout
+      new_local_type ~manifest_and_scope:(destination, expansion_scope) kkind
     in
     env := Env.add_local_type source decl !env;
     cleanup_abbrev ()
@@ -3024,8 +3023,8 @@ let unify_eq t1 t2 =
       && TypePairs.mem unify_eq_set (order_type_pair t1 t2))
 
 let unify1_var env t1 t2 =
-  let layout = match get_desc t1 with
-    | Tvar { layout } -> layout
+  let kkind = match get_desc t1 with
+    | Tvar { kkind } -> kkind
     | _ -> assert false
   in
   occur_for Unify env t1 t2;
@@ -3038,24 +3037,24 @@ let unify1_var env t1 t2 =
         with Escape e ->
           raise_for Unify (Escape e)
       end;
-      unification_layout_check env t2 layout;
+      unification_kkind_check env t2 kkind;
       link_type t1 t2;
       true
   | exception Unify_trace _ when in_pattern_mode () ->
       false
 
 (* Called from unify3 *)
-let unify3_var env layout1 t1' t2 t2' =
+let unify3_var env kkind1 t1' t2 t2' =
   occur_for Unify !env t1' t2;
   match occur_univar_for Unify !env t2 with
   | () -> begin
-      unification_layout_check !env t2' layout1;
+      unification_kkind_check !env t2' kkind1;
       link_type t1' t2
     end
   | exception Unify_trace _ when in_pattern_mode () ->
       (* CJC XXX what is going on down here?  We're recovering from an occurs
          check failure by adding a gadt equation or ignoring the failure?  Is
-         this code new in 4.14?  Do I need layouts stuff?  Look at the PR.  *)
+         this code new in 4.14?  Do I need kkinds stuff?  Look at the PR.  *)
       reify env t1';
       reify env t2';
       if can_generate_equations () then begin
@@ -3102,14 +3101,14 @@ let rec unify (env:Env.t ref) t1 t2 =
         if unify1_var !env t1 t2 then () else unify2 env t1 t2
     | (_, Tvar _) ->
         if unify1_var !env t2 t1 then () else unify2 env t1 t2
-    | (Tunivar { layout = l1 }, Tunivar { layout = l2 }) ->
+    | (Tunivar { kkind = l1 }, Tunivar { kkind = l2 }) ->
         unify_univar_for Unify t1 t2 !univar_pairs;
         update_level_for Unify !env (get_level t1) t2;
         update_scope_for Unify (get_scope t1) t2;
         (* CJC XXX: make test cases that hit this.  Easier once we have
            annotations on univars, I think. *)
-        if not (Layout.equate l1 l2) then
-          raise_for Unify (Unequal_univar_layouts (t1, l1, t2, l2));
+        if not (Kkind.equate l1 l2) then
+          raise_for Unify (Unequal_univar_kkinds (t1, l1, t2, l2));
         link_type t1 t2
     | (Tconstr (p1, [], a1), Tconstr (p2, [], a2))
           when Path.same p1 p2 (* && actual_mode !env = Old *)
@@ -3180,7 +3179,7 @@ and unify3 env t1 t1' t2 t2' =
     (not (eq_type t2 t2')) && (deep_occur t1'  t2) in
 
   begin match (d1, d2) with (* handle vars and univars specially *)
-    (Tunivar { layout = l1 }, Tunivar { layout = l2 }) ->
+    (Tunivar { kkind = l1 }, Tunivar { kkind = l2 }) ->
       unify_univar_for Unify t1' t2' !univar_pairs;
       (* CJC XXX make a test case for this once we have annotations on univars
 
@@ -3189,13 +3188,13 @@ and unify3 env t1 t1' t2 t2' =
 
         let f (x : < foo : ('a : void) . 'a foo bar >) : < foo : 'a . 'a foo bar > = x
       *)
-      if not (Layout.equate l1 l2) then
-        raise_for Unify (Unequal_univar_layouts (t1, l1, t2, l2));
+      if not (Kkind.equate l1 l2) then
+        raise_for Unify (Unequal_univar_kkinds (t1, l1, t2, l2));
       link_type t1' t2'
-  | (Tvar { layout }, _) ->
-      unify3_var env layout t1' t2 t2'
-  | (_, Tvar { layout }) ->
-      unify3_var env layout t2' t1 t1'
+  | (Tvar { kkind }, _) ->
+      unify3_var env kkind t1' t2 t2'
+  | (_, Tvar { kkind }) ->
+      unify3_var env kkind t2' t1 t1'
   | (Tfield _, Tfield _) -> (* special case for GADTs *)
       unify_fields env t1' t2'
   | _ ->
@@ -3253,8 +3252,8 @@ and unify3 env t1 t1' t2 t2' =
               inj (List.combine tl1 tl2)
       | (Tconstr (path,[],_),
          Tconstr (path',[],_))
-        when is_instantiable !env ~for_layout_eqn:false path
-          && is_instantiable !env ~for_layout_eqn:false path'
+        when is_instantiable !env ~for_kkind_eqn:false path
+          && is_instantiable !env ~for_kkind_eqn:false path'
           && can_generate_equations () ->
           let source, destination =
             if Path.scope path > Path.scope path'
@@ -3264,13 +3263,13 @@ and unify3 env t1 t1' t2 t2' =
           record_equation t1' t2';
           add_gadt_equation env source destination
       | (Tconstr (path,[],_), _)
-        when is_instantiable !env ~for_layout_eqn:false path
+        when is_instantiable !env ~for_kkind_eqn:false path
           && can_generate_equations () ->
           reify env t2';
           record_equation t1' t2';
           add_gadt_equation env path t2'
       | (_, Tconstr (path,[],_))
-        when is_instantiable !env ~for_layout_eqn:false path
+        when is_instantiable !env ~for_kkind_eqn:false path
           && can_generate_equations () ->
           reify env t1';
           record_equation t1' t2';
@@ -3368,8 +3367,8 @@ and unify_list env tl1 tl2 =
 and make_rowvar level use1 rest1 use2 rest2  =
   let set_name ty name =
     match get_desc ty with
-      Tvar { name = None; layout } ->
-        set_type_desc ty (Tvar { name; layout })
+      Tvar { name = None; kkind } ->
+        set_type_desc ty (Tvar { name; kkind })
     | _ -> ()
   in
   let name =
@@ -3384,7 +3383,7 @@ and make_rowvar level use1 rest1 use2 rest2  =
   in
   if use1 then rest1 else
   if use2 then rest2
-  else newty2 ~level (Tvar { name; layout = Layout.value })
+  else newty2 ~level (Tvar { name; kkind = Kkind.value })
 
 and unify_fields env ty1 ty2 =          (* Optimization *)
   let (fields1, rest1) = flatten_fields ty1
@@ -3447,7 +3446,7 @@ and unify_row env row1 row2 =
     | None, Some _ -> rm2
     | None, None ->
         newty2 ~level:(Int.min (get_level rm1) (get_level rm2))
-          (Tvar { name = None; layout = Layout.value })
+          (Tvar { name = None; kkind = Kkind.value })
   in
   let fixed = merge_fixed_explanation fixed1 fixed2
   and closed = row1_closed || row2_closed in
@@ -3653,13 +3652,13 @@ let unify_var ~from_subst env t1 t2 =
   match get_desc t1, get_desc t2 with
     Tvar _, Tconstr _ when deep_occur t1 t2 ->
       unify (ref env) t1 t2
-  | Tvar { layout }, _ ->
+  | Tvar { kkind }, _ ->
       let reset_tracing = check_trace_gadt_instances env in
       begin try
         occur_for Unify env t1 t2;
         update_level_for Unify env (get_level t1) t2;
         update_scope_for Unify (get_scope t1) t2;
-        if not from_subst then unification_layout_check env t2 layout;
+        if not from_subst then unification_kkind_check env t2 kkind;
         link_type t1 t2;
         reset_trace_gadt_instances reset_tracing;
       with Unify_trace trace ->
@@ -3671,7 +3670,7 @@ let unify_var ~from_subst env t1 t2 =
   | _ ->
       unify (ref env) t1 t2
 
-(* CJC XXX comment here explaining why it's safe to skip layout checks in this
+(* CJC XXX comment here explaining why it's safe to skip kkind checks in this
    case when called from subst. *)
 let _ = unify_var' := unify_var ~from_subst:true
 let unify_var = unify_var ~from_subst:false
@@ -3683,8 +3682,8 @@ let unify_pairs env ty1 ty2 pairs =
 let unify env ty1 ty2 =
   unify_pairs (ref env) ty1 ty2 []
 
-let unify_delaying_layout_checks env ty1 ty2 =
-  delay_layout_checks_in (fun () ->
+let unify_delaying_kkind_checks env ty1 ty2 =
+  delay_kkind_checks_in (fun () ->
     unify_pairs (ref env) ty1 ty2 [])
 
 (**** Special cases of unification ****)
@@ -3715,8 +3714,8 @@ exception Filter_arrow_failed of filter_arrow_failure
 
 let filter_arrow env t l ~force_tpoly =
   let function_type level =
-    (* Layouts: This is one of two primary places where we are restricting
-       function arguments / returns to have layout value.  This one handles
+    (* Kkinds: This is one of two primary places where we are restricting
+       function arguments / returns to have kkind value.  This one handles
        function types that arise from inference, and the check in
        [Typetexp.transl_type_aux] handles function types explicitly written in
        the source program.  When we decide to drop that restriction, we can
@@ -3724,20 +3723,20 @@ let filter_arrow env t l ~force_tpoly =
     let t1 =
       if not force_tpoly then begin
         assert (not (is_optional l));
-        newvar2 level Layout.value
+        newvar2 level Kkind.value
       end else begin
         let t1 =
           if is_optional l then
             newty2 ~level
-              (Tconstr(Predef.path_option,[newvar2 level Layout.value],
+              (Tconstr(Predef.path_option,[newvar2 level Kkind.value],
                        ref Mnil))
           else
-            newvar2 level Layout.value
+            newvar2 level Kkind.value
         in
         newty2 ~level (Tpoly(t1, []))
       end
     in
-    let t2 = newvar2 level Layout.value in
+    let t2 = newvar2 level Kkind.value in
     let marg = Alloc_mode.newvar () in
     let mret = Alloc_mode.newvar () in
     let t' = newty2 ~level (Tarrow ((l,marg,mret), t1, t2, commu_ok)) in
@@ -3754,10 +3753,10 @@ let filter_arrow env t l ~force_tpoly =
                      (Diff { got = t'; expected = t } :: trace))))
   in
   match get_desc t with
-    Tvar { layout } ->
+    Tvar { kkind } ->
       let t', marg, t1, mret, t2 = function_type (get_level t) in
       link_type t t';
-      constrain_type_layout_exn env Unify t' layout;
+      constrain_type_kkind_exn env Unify t' kkind;
       (marg, t1, mret, t2)
   | Tarrow((l', marg, mret), t1, t2, _) ->
       if l = l' || !Clflags.classic && l = Nolabel && not (is_optional l')
@@ -3790,15 +3789,15 @@ type filter_method_failure =
   | Unification_error of unification_error
   | Not_a_method
   | Not_an_object of type_expr
-  | Not_a_value of Layout.Violation.t
+  | Not_a_value of Kkind.Violation.t
 
 exception Filter_method_failed of filter_method_failure
 
 (* Used by [filter_method]. *)
 let rec filter_method_field env name ty =
   let method_type ~level =
-      let ty1 = newvar2 level Layout.value in
-      let ty2 = newvar2 level Layout.value in
+      let ty1 = newvar2 level Kkind.value in
+      let ty2 = newvar2 level Kkind.value in
       let ty' = newty2 ~level (Tfield (name, field_public, ty1, ty2)) in
       ty', ty1
   in
@@ -3831,7 +3830,7 @@ let rec filter_method_field env name ty =
 (* Unify [ty] and [< name : 'a; .. >]. Return ['a]. *)
 let filter_method env name ty =
   let object_type ~level ~scope =
-      let ty1 = newvar2 level Layout.value in
+      let ty1 = newvar2 level Kkind.value in
       let ty' = newty3 ~level ~scope (Tobject (ty1, ref None)) in
       let ty_meth = filter_method_field env name ty1 in
       (ty', ty_meth)
@@ -3853,7 +3852,7 @@ let filter_method env name ty =
       let level = get_level ty in
       let scope = get_scope ty in
       let ty', ty_meth = object_type ~level ~scope in
-      begin match constrain_type_layout env ty Layout.value with
+      begin match constrain_type_kkind env ty Kkind.value with
       | Ok _ -> ()
       | Error err -> raise (Filter_method_failed (Not_a_value err))
       end;
@@ -3871,8 +3870,8 @@ let rec filter_method_row env name priv ty =
   match get_desc ty with
   | Tvar _ ->
       let level = get_level ty in
-      let field = newvar2 level Layout.value in
-      let row = newvar2 level Layout.value in
+      let field = newvar2 level Kkind.value in
+      let row = newvar2 level Kkind.value in
       let kind, priv =
         match priv with
         | Private ->
@@ -3908,7 +3907,7 @@ let rec filter_method_row env name priv ty =
         | Private ->
           let level = get_level ty in
           let kind = field_absent in
-          Mprivate kind, newvar2 level Layout.value, ty
+          Mprivate kind, newvar2 level Kkind.value, ty
       end
   | _ ->
       raise Filter_method_row_failed
@@ -3916,7 +3915,7 @@ let rec filter_method_row env name priv ty =
 (* Operations on class signatures *)
 
 let new_class_signature () =
-  let row = newvar Layout.value in
+  let row = newvar Kkind.value in
   let self = newobj row in
   { csig_self = self;
     csig_self_row = row;
@@ -4150,7 +4149,7 @@ let generalize_class_signature_spine env sign =
   in
   (* But keep levels correct on the type of self *)
   Meths.iter
-    (fun _ (_, _, ty) -> unify_var env (newvar Layout.value) ty)
+    (fun _ (_, _, ty) -> unify_var env (newvar Kkind.value) ty)
     meths;
   sign.csig_meths <- new_meths
 
@@ -4241,12 +4240,12 @@ let rec moregen inst_nongen variance type_pairs env t1 t2 =
 
   try
     match (get_desc t1, get_desc t2) with
-      (Tvar { layout }, _) when may_instantiate inst_nongen t1 ->
+      (Tvar { kkind }, _) when may_instantiate inst_nongen t1 ->
         moregen_occur env (get_level t1) t2;
         update_scope_for Moregen (get_scope t1) t2;
         occur_for Moregen env t1 t2;
         link_type t1 t2;
-        constrain_type_layout_exn env Moregen t2 layout
+        constrain_type_kkind_exn env Moregen t2 kkind
     | (Tconstr (p1, [], _), Tconstr (p2, [], _)) when Path.same p1 p2 ->
         ()
     | _ ->
@@ -4258,11 +4257,11 @@ let rec moregen inst_nongen variance type_pairs env t1 t2 =
         if not (TypePairs.mem pairs (t1', t2')) then begin
           TypePairs.add pairs (t1', t2');
           match (get_desc t1', get_desc t2') with
-            (Tvar { layout }, _) when may_instantiate inst_nongen t1' ->
+            (Tvar { kkind }, _) when may_instantiate inst_nongen t1' ->
               moregen_occur env (get_level t1') t2;
               update_scope_for Moregen (get_scope t1') t2;
               link_type t1' t2;
-              constrain_type_layout_exn env Moregen t2 layout
+              constrain_type_kkind_exn env Moregen t2 kkind
           | (Tarrow ((l1,a1,r1), t1, u1, _),
              Tarrow ((l2,a2,r2), t2, u2, _)) when
                (l1 = l2
@@ -4610,7 +4609,7 @@ let eqtype_subst type_pairs subst t1 l1 t2 l2 =
   then ()
   else begin
     (* CJC XXX Errors *)
-    if not (Layout.equate l1 l2) then raise_unexplained_for Equality;
+    if not (Kkind.equate l1 l2) then raise_unexplained_for Equality;
     subst := (t1, t2) :: !subst;
     TypePairs.add type_pairs (t1, t2)
   end
@@ -4620,7 +4619,7 @@ let rec eqtype rename type_pairs subst env t1 t2 =
 
   try
     match (get_desc t1, get_desc t2) with
-      (Tvar { layout = l1 }, Tvar { layout = l2 }) when rename ->
+      (Tvar { kkind = l1 }, Tvar { kkind = l2 }) when rename ->
         eqtype_subst type_pairs subst t1 l1 t2 l2
     | (Tconstr (p1, [], _), Tconstr (p2, [], _)) when Path.same p1 p2 ->
         ()
@@ -4632,7 +4631,7 @@ let rec eqtype rename type_pairs subst env t1 t2 =
         if not (TypePairs.mem type_pairs (t1', t2')) then begin
           TypePairs.add type_pairs (t1', t2');
           match (get_desc t1', get_desc t2') with
-            (Tvar { layout = l1 }, Tvar { layout = l2 }) when rename ->
+            (Tvar { kkind = l1 }, Tvar { kkind = l2 }) when rename ->
               eqtype_subst type_pairs subst t1' l1 t2' l2
           | (Tarrow ((l1,a1,r1), t1, u1, _),
              Tarrow ((l2,a2,r2), t2, u2, _)) when
@@ -5228,8 +5227,8 @@ let rec build_subtype env (visited : transient_expr list)
              as this occurrence might break the occur check.
              XXX not clear whether this correct anyway... *)
           if List.exists (deep_occur ty) tl1 then raise Not_found;
-          set_type_desc ty (Tvar { name = None; layout = Layout.value });
-          let t'' = newvar Layout.value in
+          set_type_desc ty (Tvar { name = None; kkind = Kkind.value });
+          let t'' = newvar Kkind.value in
           let loops = (get_id ty, t'') :: loops in
           (* May discard [visited] as level is going down *)
           let (ty1', c) =
@@ -5268,7 +5267,7 @@ let rec build_subtype env (visited : transient_expr list)
                 else build_subtype env visited loops (not posi) level t
               else
                 if co then build_subtype env visited loops posi level t
-                else (newvar Layout.value, Changed))
+                else (newvar Kkind.value, Changed))
             decl.type_variance tl
         in
         let c = collect tl' in
@@ -5305,7 +5304,7 @@ let rec build_subtype env (visited : transient_expr list)
       let c = collect fields in
       let row =
         create_row ~fields:(List.map fst fields)
-          ~more:(newvar Layout.value)
+          ~more:(newvar Kkind.value)
           ~closed:posi ~fixed:None
           ~name:(if c > Unchanged then None else row_name row)
       in
@@ -5327,7 +5326,7 @@ let rec build_subtype env (visited : transient_expr list)
       else (t, Unchanged)
   | Tnil ->
       if posi then
-        let v = newvar Layout.value in
+        let v = newvar Kkind.value in
         (v, Changed)
       else begin
         warn := true;
@@ -5532,7 +5531,7 @@ and subtype_fields env trace ty1 ty2 cstrs =
   in
   let cstrs =
     if miss2 = [] then cstrs else
-    (trace, rest1, build_fields (get_level ty2) miss2 (newvar Layout.value),
+    (trace, rest1, build_fields (get_level ty2) miss2 (newvar Kkind.value),
      !univar_pairs) :: cstrs
   in
   List.fold_left
@@ -5642,7 +5641,7 @@ let rec unalias_object ty =
   | Tunivar _ ->
       ty
   | Tconstr _ ->
-      newvar2 level Layout.value
+      newvar2 level Kkind.value
   | _ ->
       assert false
 
@@ -5700,7 +5699,7 @@ let rec nongen_schema_rec env ty =
 
 (* Return whether all variables of type [ty] are generic. *)
 let nongen_schema env ty =
-  remove_mode_and_layout_variables ty;
+  remove_mode_and_kkind_variables ty;
   visited := TypeSet.empty;
   try
     nongen_schema_rec env ty;
@@ -5830,7 +5829,7 @@ let rec nondep_type_rec ?(expand_private=false) env ids ty =
     Tvar _ | Tunivar _ -> ty
   | _ -> try TypeHash.find nondep_hash ty
   with Not_found ->
-    let ty' = newgenstub ~scope:(get_scope ty) Layout.any in
+    let ty' = newgenstub ~scope:(get_scope ty) Kkind.any in
     TypeHash.add nondep_hash ty ty';
     let desc =
       match get_desc ty with
@@ -5916,7 +5915,7 @@ let nondep_type_decl env mid is_covariant decl =
       try map_kind (nondep_type_rec env mid) decl.type_kind
       with Nondep_cannot_erase _ when is_covariant ->
         Types.kind_abstract
-          ~layout:(layout_bound_of_kind decl.type_kind)
+          ~kkind:(kkind_bound_of_kind decl.type_kind)
     and tm, priv =
       match decl.type_manifest with
       | None -> None, decl.type_private
@@ -5980,7 +5979,7 @@ let nondep_extension_constructor env ids ext =
       { ext_type_path = type_path;
         ext_type_params = type_params;
         ext_args = args;
-        ext_arg_layouts = ext.ext_arg_layouts;
+        ext_arg_kkinds = ext.ext_arg_kkinds;
         ext_constant = ext.ext_constant;
         ext_ret_type = ret_type;
         ext_private = ext.ext_private;
@@ -6084,10 +6083,10 @@ let () =
   Env.same_constr := same_constr
 
 let is_immediate env ty =
-  let layout =
+  let kkind =
     (* In bytecode, we don't know at compile time whether we are
        targeting 32 or 64 bits. *)
-    if !Clflags.native_code && Sys.word_size = 64 then Layout.immediate64
-    else Layout.immediate
+    if !Clflags.native_code && Sys.word_size = 64 then Kkind.immediate64
+    else Kkind.immediate
   in
-  Result.is_ok (check_type_layout env ty layout)
+  Result.is_ok (check_type_kkind env ty kkind)

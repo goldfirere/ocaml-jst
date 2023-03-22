@@ -21,7 +21,6 @@ open Format
 open Longident
 open Path
 open Asttypes
-open Layouts
 open Types
 open Btype
 open Outcometree
@@ -522,9 +521,9 @@ let rec raw_type ppf ty =
   end
 and raw_type_list tl = raw_list raw_type tl
 and raw_type_desc ppf = function
-    Tvar { name; layout } ->
+    Tvar { name; kkind } ->
       fprintf ppf "Tvar (@,%a,@,%s)" print_name name
-        (Layout.to_string layout)
+        (Kkind.to_string kkind)
   | Tarrow((l,arg,ret),t1,t2,c) ->
       fprintf ppf "@[<hov1>Tarrow((\"%s\",%a,%a),@,%a,@,%a,@,%s)@]"
         (string_of_label l) Alloc_mode.print arg Alloc_mode.print ret
@@ -551,9 +550,9 @@ and raw_type_desc ppf = function
   | Tsubst (t, None) -> fprintf ppf "@[<1>Tsubst@,(%a,None)@]" raw_type t
   | Tsubst (t, Some t') ->
       fprintf ppf "@[<1>Tsubst@,(%a,@ Some%a)@]" raw_type t raw_type t'
-  | Tunivar { name; layout } ->
+  | Tunivar { name; kkind } ->
       fprintf ppf "Tunivar (@,%a,@,%s)" print_name name
-        (Layout.to_string layout)
+        (Kkind.to_string kkind)
   | Tpoly (t, tl) ->
       fprintf ppf "@[<hov1>Tpoly(@,%a,@,%a)@]"
         raw_type t
@@ -1375,9 +1374,9 @@ let rec tree_of_type_decl id decl =
       List.iter
         (fun ty ->
           match get_desc ty with
-          | Tvar { name = Some "_"; layout }
+          | Tvar { name = Some "_"; kkind }
               when List.exists (eq_type ty) vars ->
-            set_type_desc ty (Tvar {name = None; layout})
+            set_type_desc ty (Tvar {name = None; kkind})
           | _ -> ())
         params
   | None -> ()
@@ -1465,7 +1464,7 @@ let rec tree_of_type_decl id decl =
   in
   let (name, args) = type_defined decl in
   let constraints = tree_of_constraints params in
-  let lay = Builtin_attributes.layout decl.type_attributes in
+  let lay = Builtin_attributes.kkind decl.type_attributes in
   let ty, priv, unboxed =
     match decl.type_kind with
     | Type_abstract _ ->
@@ -1496,7 +1495,7 @@ let rec tree_of_type_decl id decl =
       otype_params = args;
       otype_type = ty;
       otype_private = priv;
-      otype_layout = lay;
+      otype_kkind = lay;
       otype_unboxed = unboxed;
       otype_cstrs = constraints }
 
@@ -2084,17 +2083,17 @@ let same_path t t' =
 type 'a diff = Same of 'a | Diff of 'a * 'a
 
 let trees_of_type_expansion'
-      ~var_layouts mode Errortrace.{ty = t; expanded = t'} =
+      ~var_kkinds mode Errortrace.{ty = t; expanded = t'} =
   let tree_of_typexp' ty =
     let out = tree_of_typexp mode ty in
-    if var_layouts then
+    if var_kkinds then
       match get_desc ty with
-      | Tvar { layout; _ } | Tunivar { layout; _ } ->
-          let olay = match Layouts.Layout.get layout with
+      | Tvar { kkind; _ } | Tunivar { kkind; _ } ->
+          let olay = match Kkind.get kkind with
             | Const clay -> Olay_const clay
             | Var   _    -> Olay_var
           in
-          Otyp_layout_annot (out, olay)
+          Otyp_kkind_annot (out, olay)
       | _ ->
           out
     else
@@ -2116,7 +2115,7 @@ let trees_of_type_expansion'
   end
 
 let trees_of_type_expansion =
-  trees_of_type_expansion' ~var_layouts:false
+  trees_of_type_expansion' ~var_kkinds:false
 
 let type_expansion ppf = function
   | Same t -> !Oprint.out_type ppf t
@@ -2213,7 +2212,7 @@ let hide_variant_name t =
       newty2 ~level:(get_level t)
         (Tvariant
            (create_row ~fields ~fixed ~closed ~name:None
-              ~more:(newvar2 (get_level more) Layout.value)))
+              ~more:(newvar2 (get_level more) Kkind.value)))
   | _ -> t
 
 let prepare_expansion Errortrace.{ty; expanded} =
@@ -2414,20 +2413,20 @@ let explanation (type variety) intro prev env
              {[ The type int occurs inside int list -> 'a |}
         *)
     end
-  | Errortrace.Bad_layout (t,e) ->
+  | Errortrace.Bad_kkind (t,e) ->
       Some (dprintf "@ @[<hov>%a@]"
-              (Layout.Violation.report_with_offender
+              (Kkind.Violation.report_with_offender
                  ~offender:(fun ppf -> type_expr ppf t)) e)
-  | Errortrace.Bad_layout_sort (t,e) ->
+  | Errortrace.Bad_kkind_sort (t,e) ->
       Some (dprintf "@ @[<hov>%a@]"
-              (Layout.Violation.report_with_offender_sort
+              (Kkind.Violation.report_with_offender_sort
                  ~offender:(fun ppf -> type_expr ppf t)) e)
-  | Errortrace.Unequal_univar_layouts (t1,l1,t2,l2) ->
+  | Errortrace.Unequal_univar_kkinds (t1,l1,t2,l2) ->
       Some (dprintf "@,@[<hov>Universal variables %a and %a should be equal, \
                      but@ the former has layout %s,@ and the latter has \
                      layout %s@]"
               type_expr t1 type_expr t2
-              (Layout.to_string l1) (Layout.to_string l2))
+              (Kkind.to_string l1) (Kkind.to_string l2))
 
 let mismatch intro env trace =
   Errortrace.explain trace (fun ~prev h -> explanation intro prev env h)
@@ -2455,11 +2454,11 @@ let prepare_expansion_head empty_tr = function
       Some (Errortrace.map_diff (may_prepare_expansion empty_tr) d)
   | _ -> None
 
-let head_error_printer ~var_layouts mode txt_got txt_but = function
+let head_error_printer ~var_kkinds mode txt_got txt_but = function
   | None -> ignore
   | Some d ->
       let d =
-        Errortrace.map_diff (trees_of_type_expansion' ~var_layouts mode) d
+        Errortrace.map_diff (trees_of_type_expansion' ~var_kkinds mode) d
       in
       dprintf "%t@;<1 2>%a@ %t@;<1 2>%a"
         txt_got type_expansion d.Errortrace.got
@@ -2483,8 +2482,8 @@ let error trace_format mode subst env tr txt1 ppf txt2 ty_expect_explanation =
          Errortrace.{ty_exp with expanded = hide_variant_name ty_exp.expanded})
       tr
   in
-  let layout_error = match Misc.last tr with
-    | Some (Bad_layout _ | Bad_layout_sort _ | Unequal_univar_layouts _) ->
+  let kkind_error = match Misc.last tr with
+    | Some (Bad_kkind _ | Bad_kkind_sort _ | Unequal_univar_kkinds _) ->
         true
     | Some _ | None ->
         false
@@ -2499,7 +2498,7 @@ let error trace_format mode subst env tr txt1 ppf txt2 ty_expect_explanation =
       let head = prepare_expansion_head (tr=[]) elt in
       let tr = List.map (Errortrace.map_diff prepare_expansion) tr in
       let head_error =
-        head_error_printer ~var_layouts:layout_error mode txt1 txt2 head
+        head_error_printer ~var_kkinds:kkind_error mode txt1 txt2 head
       in
       let tr = trees_of_trace mode tr in
       fprintf ppf
