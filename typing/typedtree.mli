@@ -241,13 +241,13 @@ and expression_desc =
                          (Labelled "y", Some (Texp_constant Const_int 3))
                         ])
          *)
-  | Texp_match of expression * Kkind.sort * computation case list * partial
+  | Texp_match of expression * Kkind.Layout.t * computation case list * partial
         (** match E0 with
             | P1 -> E1
             | P2 | exception P3 -> E2
             | exception P4 -> E3
 
-            [Texp_match (E0, sort_of_E0, [(P1, E1); (P2 | exception P3, E2);
+            [Texp_match (E0, layout_of_E0, [(P1, E1); (P2 | exception P3, E2);
                               (exception P4, E3)], _)]
          *)
   | Texp_try of expression * value case list
@@ -523,7 +523,7 @@ and value_binding =
   {
     vb_pat: pattern;
     vb_expr: expression;
-    vb_sort: Kkind.sort;
+    vb_layout: Kkind.Layout.t;
     vb_attributes: attributes;
     vb_loc: Location.t;
   }
@@ -902,9 +902,9 @@ val exists_general_pattern: pattern_predicate -> 'k general_pattern -> bool
 val exists_pattern: (pattern -> bool) -> pattern -> bool
 
 val let_bound_idents: value_binding list -> Ident.t list
-val let_bound_idents_with_modes_and_sorts:
+val let_bound_idents_with_modes_and_layouts:
   value_binding list
-  -> (Ident.t * (Location.t * Types.value_mode * Kkind.sort) list) list
+  -> (Ident.t * (Location.t * Types.value_mode * Kkind.Layout.t) list) list
 
 (** Alpha conversion of patterns *)
 val alpha_pat:
@@ -917,8 +917,8 @@ val pat_bound_idents: 'k general_pattern -> Ident.t list
 val pat_bound_idents_with_types:
   'k general_pattern -> (Ident.t * Types.type_expr) list
 val pat_bound_idents_full:
-  Kkind.sort -> 'k general_pattern
-  -> (Ident.t * string loc * Types.type_expr * Kkind.sort) list
+  Kkind.Layout.t -> 'k general_pattern
+  -> (Ident.t * string loc * Types.type_expr * Kkind.Layout.t) list
 
 (** Splits an or pattern into its value (left) and exception (right) parts. *)
 val split_pattern:

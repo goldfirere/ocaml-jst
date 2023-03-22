@@ -94,7 +94,7 @@ type ('a, 'variety) elt =
   (* Unification & Moregen; included in Equality for simplicity *)
   | Rec_occur : type_expr * type_expr -> ('a, _) elt
   | Bad_kkind : type_expr * Kkind.Violation.t -> ('a, _) elt
-  | Bad_kkind_sort : type_expr * Kkind.Violation.t -> ('a, _) elt
+  | Bad_kkind_layout : type_expr * Kkind.Violation.t -> ('a, _) elt
   | Unequal_univar_kkinds :
       type_expr * Kkind.t * type_expr * Kkind.t -> ('a, _) elt
 

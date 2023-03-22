@@ -147,7 +147,7 @@ let name_expression ~loc ~attrs exp =
        vb_expr = exp;
        (* CR ccasinghino may need to be revisited when we allow non-value
           top-level module bindings *)
-       vb_sort = Kkind.Sort.value;
+       vb_layout = Kkind.Layout.value;
        vb_attributes = attrs;
        vb_loc = loc; }
    in

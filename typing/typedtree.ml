@@ -113,7 +113,7 @@ and expression_desc =
       region : bool; curry : fun_curry_state;
       warnings : Warnings.state; }
   | Texp_apply of expression * (arg_label * apply_arg) list * apply_position
-  | Texp_match of expression * Kkind.sort * computation case list * partial
+  | Texp_match of expression * Kkind.Layout.t * computation case list * partial
   | Texp_try of expression * value case list
   | Texp_tuple of expression list
   | Texp_construct of
@@ -358,7 +358,7 @@ and value_binding =
   {
     vb_pat: pattern;
     vb_expr: expression;
-    vb_sort: Kkind.sort;
+    vb_layout: Kkind.Layout.t;
     vb_attributes: attributes;
     vb_loc: Location.t;
   }
@@ -838,55 +838,55 @@ let rec iter_bound_idents
        d
 
 type full_bound_ident_action =
-  Ident.t -> string loc -> type_expr -> value_mode -> Kkind.sort -> unit
+  Ident.t -> string loc -> type_expr -> value_mode -> Kkind.Layout.t -> unit
 
-let iter_pattern_full ~both_sides_of_or f sort pat =
+let iter_pattern_full ~both_sides_of_or f layout pat =
   let rec loop :
-    type k . full_bound_ident_action -> Kkind.sort -> k general_pattern -> _ =
-    fun f sort pat ->
+    type k . full_bound_ident_action -> Kkind.Layout.t -> k general_pattern -> _ =
+    fun f layout pat ->
       match pat.pat_desc with
-      (* Cases where we push the sort inwards: *)
+      (* Cases where we push the layout inwards: *)
       | Tpat_var (id, s) ->
-          f id s pat.pat_type pat.pat_mode sort
+          f id s pat.pat_type pat.pat_mode layout
       | Tpat_alias(p, id, s) ->
-          loop f sort p;
-          f id s pat.pat_type pat.pat_mode sort
+          loop f layout p;
+          f id s pat.pat_type pat.pat_mode layout
       | Tpat_or (p1, p2, _) ->
-        if both_sides_of_or then (loop f sort p1; loop f sort p2)
-        else loop f sort p1
-      | Tpat_value p -> loop f sort p
-      (* Cases where we compute the sort of the inner thing from the pattern *)
+        if both_sides_of_or then (loop f layout p1; loop f layout p2)
+        else loop f layout p1
+      | Tpat_value p -> loop f layout p
+      (* Cases where we compute the layout of the inner thing from the pattern *)
       | Tpat_construct(_, cstr, patl, _) ->
-          let sorts =
+          let layouts =
             match cstr.cstr_repr with
-            | Variant_unboxed _ -> [ sort ]
+            | Variant_unboxed _ -> [ layout ]
             | Variant_boxed _ | Variant_extensible ->
-              Array.to_list (Array.map Kkind.sort_of_kkind
+              Array.to_list (Array.map Kkind.layout_of_kkind
                                           cstr.cstr_arg_kkinds)
           in
-          List.iter2 (loop f) sorts patl
+          List.iter2 (loop f) layouts patl
       | Tpat_record (lbl_pat_list, _) ->
           List.iter (fun (_, lbl, pat) ->
-            (loop f) (Kkind.sort_of_kkind lbl.lbl_kkind) pat)
+            (loop f) (Kkind.layout_of_kkind lbl.lbl_kkind) pat)
             lbl_pat_list
       (* Cases where the inner things must be value: *)
-      | Tpat_variant (_, pat, _) -> Option.iter (loop f Kkind.Sort.value) pat
-      | Tpat_tuple patl -> List.iter (loop f Kkind.Sort.value) patl
+      | Tpat_variant (_, pat, _) -> Option.iter (loop f Kkind.Layout.value) pat
+      | Tpat_tuple patl -> List.iter (loop f Kkind.Layout.value) patl
         (* CR ccasinghino: tuple case to change when we allow non-values in
            tuples *)
-      | Tpat_array patl -> List.iter (loop f Kkind.Sort.value) patl
-      | Tpat_lazy p | Tpat_exception p -> loop f Kkind.Sort.value p
+      | Tpat_array patl -> List.iter (loop f Kkind.Layout.value) patl
+      | Tpat_lazy p | Tpat_exception p -> loop f Kkind.Layout.value p
       (* Cases without variables: *)
       | Tpat_any | Tpat_constant _ -> ()
   in
-  loop f sort pat
+  loop f layout pat
 
-let rev_pat_bound_idents_full sort pat =
+let rev_pat_bound_idents_full layout pat =
   let idents_full = ref [] in
-  let add id sloc typ _ sort =
-    idents_full := (id, sloc, typ, sort) :: !idents_full
+  let add id sloc typ _ layout =
+    idents_full := (id, sloc, typ, layout) :: !idents_full
   in
-  iter_pattern_full ~both_sides_of_or:false add sort pat;
+  iter_pattern_full ~both_sides_of_or:false add layout pat;
   !idents_full
 
 let rev_only_idents idents_full =
@@ -895,15 +895,15 @@ let rev_only_idents idents_full =
 let rev_only_idents_and_types idents_full =
   List.rev_map (fun (id,_,ty,_) -> (id,ty)) idents_full
 
-let pat_bound_idents_full sort pat =
-  List.rev (rev_pat_bound_idents_full sort pat)
+let pat_bound_idents_full layout pat =
+  List.rev (rev_pat_bound_idents_full layout pat)
 
-(* In these two, we don't know the sort, but the sort information isn't used so
+(* In these two, we don't know the layout, but the layout information isn't used so
    it's fine to lie. *)
 let pat_bound_idents_with_types pat =
-  rev_only_idents_and_types (rev_pat_bound_idents_full Kkind.Sort.value pat)
+  rev_only_idents_and_types (rev_pat_bound_idents_full Kkind.Layout.value pat)
 let pat_bound_idents pat =
-  rev_only_idents (rev_pat_bound_idents_full Kkind.Sort.value pat)
+  rev_only_idents (rev_pat_bound_idents_full Kkind.Layout.value pat)
 
 let rev_let_bound_idents bindings =
   let idents = ref [] in
@@ -911,16 +911,16 @@ let rev_let_bound_idents bindings =
   List.iter (fun vb -> iter_bound_idents add vb.vb_pat) bindings;
   !idents
 
-let let_bound_idents_with_modes_and_sorts bindings =
-  let modes_and_sorts = Ident.Tbl.create 3 in
-  let f id sloc _ mode sort =
-    Ident.Tbl.add modes_and_sorts id (sloc.loc, mode, sort)
+let let_bound_idents_with_modes_and_layouts bindings =
+  let modes_and_layouts = Ident.Tbl.create 3 in
+  let f id sloc _ mode layout =
+    Ident.Tbl.add modes_and_layouts id (sloc.loc, mode, layout)
   in
   List.iter (fun vb ->
-    iter_pattern_full ~both_sides_of_or:true f vb.vb_sort vb.vb_pat)
+    iter_pattern_full ~both_sides_of_or:true f vb.vb_layout vb.vb_pat)
     bindings;
   List.rev_map
-    (fun id -> id, List.rev (Ident.Tbl.find_all modes_and_sorts id))
+    (fun id -> id, List.rev (Ident.Tbl.find_all modes_and_layouts id))
     (rev_let_bound_idents bindings)
 
 let let_bound_idents pat = List.rev (rev_let_bound_idents pat)

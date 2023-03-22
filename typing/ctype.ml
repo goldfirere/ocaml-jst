@@ -2011,11 +2011,11 @@ let type_kkind env ty =
   estimate_type_kkind env (get_unboxed_type_representation env ty)
 
 (* CR ccasinghino perhaps this should take in some information about why
-   we think a sort is required, to put in the error. *)
-let type_sort env ty =
-  let sort = Kkind.Sort.new_var () in
-  match constrain_type_kkind env ty (Kkind.of_sort sort) with
-  | Ok _ -> Ok sort
+   we think a layout is required, to put in the error. *)
+let type_layout env ty =
+  let layout = Kkind.Layout.new_var () in
+  match constrain_type_kkind env ty (Kkind.of_layout layout) with
+  | Ok _ -> Ok layout
   | Error _ as e -> e
 
 (* Note: Because [estimate_type_kkind] actually returns an upper bound, this
@@ -3719,7 +3719,7 @@ let filter_arrow env t l ~force_tpoly =
        function types that arise from inference, and the check in
        [Typetexp.transl_type_aux] handles function types explicitly written in
        the source program.  When we decide to drop that restriction, we can
-       probably allow [t1] to be any sort, and [t2] to be just any. *)
+       probably allow [t1] to be any layout, and [t2] to be just any. *)
     let t1 =
       if not force_tpoly then begin
         assert (not (is_optional l));

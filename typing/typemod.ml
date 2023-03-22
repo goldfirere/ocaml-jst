@@ -84,7 +84,7 @@ type error =
   | Invalid_type_subst_rhs
   | Unpackable_local_modtype_subst of Path.t
   | With_cannot_remove_packed_modtype of Path.t * module_type
-  | Toplevel_nonvalue of string * Kkind.sort
+  | Toplevel_nonvalue of string * Kkind.Layout.t
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
@@ -2566,13 +2566,13 @@ and type_structure ?(toplevel = None) funct_body anchor env sstr =
           List.fold_left
             (fun (acc, shape_map) (id, modes) ->
               List.iter
-                (fun (loc, mode, sort) ->
+                (fun (loc, mode, layout) ->
                    Typecore.escape ~loc ~env:newenv mode;
                    (* Note that this kkind check has the effect of defaulting
-                      the sort of top-level bindings to value. *)
-                   if not (Kkind.(equate (of_sort sort) value)) then
+                      the layout of top-level bindings to value. *)
+                   if not (Kkind.(equate (of_layout layout) value)) then
                      raise (Error (loc, env,
-                                   Toplevel_nonvalue (Ident.name id,sort)))
+                                   Toplevel_nonvalue (Ident.name id,layout)))
                 )
                 modes;
               let (first_loc, _, _) = List.hd modes in
@@ -2583,7 +2583,7 @@ and type_structure ?(toplevel = None) funct_body anchor env sstr =
               Shape.Map.add_value shape_map id vd.val_uid
             )
             ([], shape_map)
-            (let_bound_idents_with_modes_and_sorts defs)
+            (let_bound_idents_with_modes_and_layouts defs)
         in
         Tstr_value(rec_flag, defs),
         List.rev items,
@@ -3524,10 +3524,10 @@ let report_error ~loc _env = function
         "The module type@ %s@ is not a valid type for a packed module:@ \
          it is defined as a local substitution for a non-path module type."
         (Path.name p)
-  | Toplevel_nonvalue (id, sort) ->
+  | Toplevel_nonvalue (id, layout) ->
       Location.errorf ~loc
         "@[Top-level module bindings must have layout value, but@ \
-         %s has layout@ %a.@]" id Kkind.format (Kkind.of_sort sort)
+         %s has layout@ %a.@]" id Kkind.format (Kkind.of_layout layout)
 
 let report_error env ~loc err =
   Printtyp.wrap_printing_env ~error:true env

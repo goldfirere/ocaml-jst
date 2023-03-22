@@ -2417,9 +2417,9 @@ let explanation (type variety) intro prev env
       Some (dprintf "@ @[<hov>%a@]"
               (Kkind.Violation.report_with_offender
                  ~offender:(fun ppf -> type_expr ppf t)) e)
-  | Errortrace.Bad_kkind_sort (t,e) ->
+  | Errortrace.Bad_kkind_layout (t,e) ->
       Some (dprintf "@ @[<hov>%a@]"
-              (Kkind.Violation.report_with_offender_sort
+              (Kkind.Violation.report_with_offender_layout
                  ~offender:(fun ppf -> type_expr ppf t)) e)
   | Errortrace.Unequal_univar_kkinds (t1,l1,t2,l2) ->
       Some (dprintf "@,@[<hov>Universal variables %a and %a should be equal, \
@@ -2483,7 +2483,7 @@ let error trace_format mode subst env tr txt1 ppf txt2 ty_expect_explanation =
       tr
   in
   let kkind_error = match Misc.last tr with
-    | Some (Bad_kkind _ | Bad_kkind_sort _ | Unequal_univar_kkinds _) ->
+    | Some (Bad_kkind _ | Bad_kkind_layout _ | Unequal_univar_kkinds _) ->
         true
     | Some _ | None ->
         false

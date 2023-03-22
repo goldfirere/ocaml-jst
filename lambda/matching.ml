@@ -3748,7 +3748,7 @@ let assign_pat ~scopes value_kind opt nraise catch_ids loc pat lam =
     simple_for_let ~scopes value_kind loc lam pat code in
   List.fold_left push_sublet exit rev_sublets
 
-let for_let ~scopes loc param_void_k param param_sort pat body_kind body =
+let for_let ~scopes loc param_void_k param param_layout pat body_kind body =
   match param_void_k with
   | Void_cont k ->
       (* the param is void.  Any variables bound by the pattern must also be
@@ -3768,11 +3768,11 @@ let for_let ~scopes loc param_void_k param param_sort pat body_kind body =
       | _ ->
         let opt = ref false in
         let nraise = next_raise_count () in
-        let catch_ids = pat_bound_idents_full param_sort pat in
+        let catch_ids = pat_bound_idents_full param_layout pat in
         let ids_with_kinds =
           List.filter_map
-            (fun (id, _, typ, sort) ->
-               if Kkind.can_make_void (Kkind.of_sort sort)
+            (fun (id, _, typ, layout) ->
+               if Kkind.can_make_void (Kkind.of_layout layout)
                then None
                else Some (id, Typeopt.value_kind pat.pat_env typ))
             catch_ids

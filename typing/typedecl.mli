@@ -61,7 +61,7 @@ val is_fixed_type : Parsetree.type_declaration -> bool
 
 type native_repr_kind = Unboxed | Untagged
 
-type kkind_sort_loc = Cstr_tuple | Record
+type kkind_layout_loc = Cstr_tuple | Record
 
 type error =
     Repeated_parameter
@@ -98,8 +98,8 @@ type error =
   | Cannot_unbox_or_untag_type of native_repr_kind
   | Deep_unbox_or_untag_attribute of native_repr_kind
   | Kkind of Kkind.Violation.t
-  | Kkind_sort of
-      {lloc : kkind_sort_loc; typ : type_expr; err : Kkind.Violation.t}
+  | Kkind_layout of
+      {lloc : kkind_layout_loc; typ : type_expr; err : Kkind.Violation.t}
   | Kkind_empty_record
   | Separability of Typedecl_separability.error
   | Bad_unboxed_attribute of string

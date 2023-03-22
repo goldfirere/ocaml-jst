@@ -109,7 +109,7 @@ type ('a, 'variety) elt =
   (* Unification & Moregen; included in Equality for simplicity *)
   | Rec_occur : type_expr * type_expr -> ('a, _) elt
   | Bad_kkind : type_expr * Kkind.Violation.t -> ('a, _) elt
-  | Bad_kkind_sort : type_expr * Kkind.Violation.t -> ('a, _) elt
+  | Bad_kkind_layout : type_expr * Kkind.Violation.t -> ('a, _) elt
   | Unequal_univar_kkinds :
       type_expr * Kkind.t * type_expr * Kkind.t -> ('a, _) elt
 
@@ -126,7 +126,7 @@ let map_elt (type variety) f : ('a, variety) elt -> ('b, variety) elt = function
             _}
   | Variant _ | Obj _ | Incompatible_fields _ | Rec_occur (_, _) as x -> x
   | Bad_kkind _ as x -> x
-  | Bad_kkind_sort _ as x -> x
+  | Bad_kkind_layout _ as x -> x
   | Unequal_univar_kkinds _ as x -> x
 
 let map f t = List.map (map_elt f) t

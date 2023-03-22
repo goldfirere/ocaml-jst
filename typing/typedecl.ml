@@ -26,7 +26,7 @@ module String = Misc.Stdlib.String
 
 type native_repr_kind = Unboxed | Untagged
 
-type kkind_sort_loc = Cstr_tuple | Record
+type kkind_layout_loc = Cstr_tuple | Record
 
 type error =
     Repeated_parameter
@@ -63,8 +63,8 @@ type error =
   | Cannot_unbox_or_untag_type of native_repr_kind
   | Deep_unbox_or_untag_attribute of native_repr_kind
   | Kkind of Kkind.Violation.t
-  | Kkind_sort of
-      {lloc : kkind_sort_loc; typ : type_expr; err : Kkind.Violation.t}
+  | Kkind_layout of
+      {lloc : kkind_layout_loc; typ : type_expr; err : Kkind.Violation.t}
   | Kkind_empty_record
   | Separability of Typedecl_separability.error
   | Bad_unboxed_attribute of string
@@ -169,7 +169,7 @@ let enter_type rec_flag env sdecl (id, uid) =
     { type_params =
         (* CR ccasinghino: At the moment, we're defaulting type parameters in
            recursive type declarations to kkind value.  We could probably allow
-           (Sort 'l) and default to value if it's not determined by use. *)
+           (Layout 'l) and default to value if it's not determined by use. *)
         List.map (fun ({ptyp_attributes;_},_) ->
           let kkind =
             Kkind.of_attributes ~default:Kkind.value
@@ -267,8 +267,8 @@ let set_private_row env loc p decl =
 
 (* Translate one type declaration *)
 
-(* [make_params] creates sort variables - these can be defaulted away (as in
-   transl_type_decl) or unified with existing sort-variable-free types (as in
+(* [make_params] creates layout variables - these can be defaulted away (as in
+   transl_type_decl) or unified with existing layout-variable-free types (as in
    transl_with_constraint). *)
 let make_params env params =
   (* Our choice for now is that if you want a parameter of kkind any, you have
@@ -278,7 +278,7 @@ let make_params env params =
   let make_param (sty, v) =
     try
       let kkind =
-        Kkind.of_attributes ~default:(Kkind.of_new_sort_var ())
+        Kkind.of_attributes ~default:(Kkind.of_new_layout_var ())
           sty.ptyp_attributes
       in
       (transl_type_param env sty kkind, v)
@@ -827,12 +827,12 @@ let check_coherence env loc dpath decl =
 let check_abbrev env sdecl (id, decl) =
   (id, check_coherence env sdecl.ptype_loc (Path.Pident id) decl)
 
-(* This eliminates remaining sort variables, defaulting to value.
+(* This eliminates remaining layout variables, defaulting to value.
 
-   We create sort variables in several places:
+   We create layout variables in several places:
 
    - If the user hasn't explicitly annotated a type parameter with a kkind, it
-     is given a sort variable.  We may discover this is something more specific
+     is given a layout variable.  We may discover this is something more specific
      while checking the type and other types in the mutually defined group.  If
      not, we default to value.
 
@@ -841,7 +841,7 @@ let check_abbrev env sdecl (id, decl) =
      could be given any.  For that, you need [type ('a : any) foo = Bar].
 
    - In type kinds, we check that types are representable by unifying them with
-     a sort variable (e.g., arguments to constructors and types used in
+     a layout variable (e.g., arguments to constructors and types used in
      records). This is enough to ensure we can compile these types.  (Though in
      the future there will also be the mixed block restriction.)  We default
      them to value if we don't learn anything by unifying with the type (as may
@@ -849,12 +849,12 @@ let check_abbrev env sdecl (id, decl) =
 
    It's important to do this defaulting before things like the separability
    check or update_decl_kkind, because those test whether certain types are
-   void or immediate, and if there were sort variables still around that would
+   void or immediate, and if there were layout variables still around that would
    have effects!
 *)
 let default_decl_kkind decl =
   (* CR ccasinghino: At the moment, I believe this defaulting is sufficient
-     because of the limited number of places where sort variables are created.
+     because of the limited number of places where layout variables are created.
      But in the future it may be necessary to also do defaulting in the manifest
      and recursively in the types in the kind, with [iter_type_expr]. *)
   let default_typ typ =
@@ -871,7 +871,7 @@ let default_decl_kkind decl =
     | Cstr_record ldecls -> List.iter default_ldecl ldecls
   in
   let default_kind = function
-    (* Nothing to do in abstract case because we don't put new sort variables
+    (* Nothing to do in abstract case because we don't put new layout variables
        there. *)
     | Type_abstract _ | Type_open -> ()
     | Type_record (ldecls, _) -> List.iter default_ldecl ldecls
@@ -890,9 +890,9 @@ let default_decls_kkind decls =
    most precise kkind.  These could be combined into some new function
    [Ctype.type_kkind_representable] that avoids duplicated work *)
 let check_representable env loc lloc typ =
-  match Ctype.type_sort env typ with
-  | Ok s -> Kkind.default_to_value (Kkind.of_sort s)
-  | Error err -> raise (Error (loc,Kkind_sort {lloc; typ; err}))
+  match Ctype.type_layout env typ with
+  | Ok s -> Kkind.default_to_value (Kkind.of_layout s)
+  | Error err -> raise (Error (loc,Kkind_layout {lloc; typ; err}))
 
 (* The [update_x_kkinds] functions infer more precise kkinds in the type kind,
    including which fields of a record are void.  This would be hard to do during
@@ -1332,10 +1332,10 @@ let transl_type_decl env rec_flag sdecl_list =
     sdecl_list tdecls;
   (* Check that constraints are enforced *)
   List.iter2 (check_constraints new_env) sdecl_list decls;
-  (* Default away sort variables.  Must happen before update_decls_kkind,
+  (* Default away layout variables.  Must happen before update_decls_kkind,
      Typedecl_seperability.update_decls, and add_types_to_env, all of which need
      to check whether parts of the type are void (and currently use
-     Kkind.equate to do this which would set any remaining sort variables
+     Kkind.equate to do this which would set any remaining layout variables
      to void). *)
   default_decls_kkind decls;
   (* Add type properties to declarations *)
@@ -2302,7 +2302,7 @@ let report_error ppf = function
          it should not occur deeply into its type.@]"
         (match kind with Unboxed -> "@unboxed" | Untagged -> "@untagged")
   | Kkind v -> Kkind.Violation.report_with_name ~name:"This type" ppf v
-  | Kkind_sort {lloc; typ; err} ->
+  | Kkind_layout {lloc; typ; err} ->
     let s =
       match lloc with
       | Cstr_tuple -> "Constructor argument"

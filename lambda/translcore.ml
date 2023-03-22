@@ -55,7 +55,7 @@ let declare_probe_handlers lam =
     !probe_handlers
 
 (* Kkind checking may default everything once we reach translcore *)
-let is_void_sort s = Kkind.can_make_void (Kkind.of_sort s)
+let is_void_layout s = Kkind.can_make_void (Kkind.of_layout s)
 let is_void_kkind = Kkind.can_make_void
 
 (* Compile an exception/extension definition *)
@@ -244,7 +244,7 @@ let rec push_defaults loc bindings use_lhs cases partial warnings =
               Texp_ident
                 (Path.Pident param, mknoloc (Longident.Lident name),
                  desc, Id_value)},
-             Kkind.Sort.value,
+             Kkind.Layout.value,
              (* CR ccasinghino Value here will changes when functions take other
                 kkinds *)
              cases, partial) }
@@ -524,8 +524,8 @@ and transl_exp0 ~in_new_scope ~scopes void_k e =
         (transl_apply ~scopes ~tailcall ~inlined ~specialised
            ~position ~mode (transl_exp ~scopes Not_void funct)
            oargs (of_location ~scopes e.exp_loc))
-  | Texp_match(arg, sort, pat_expr_list, partial) ->
-      transl_match ~scopes e arg sort pat_expr_list partial void_k
+  | Texp_match(arg, layout, pat_expr_list, partial) ->
+      transl_match ~scopes e arg layout pat_expr_list partial void_k
   | Texp_try(body, pat_expr_list) ->
       let id = Typecore.name_cases "exn" pat_expr_list in
       let k = value_kind_if_not_void e void_k in
@@ -1450,10 +1450,10 @@ and transl_let ~scopes ?(add_regions=false) ?(in_structure=false)
       let rec transl = function
         [] ->
           fun body -> body
-      | {vb_pat=pat; vb_expr=expr; vb_sort=sort; vb_attributes=attr; vb_loc}
+      | {vb_pat=pat; vb_expr=expr; vb_layout=layout; vb_attributes=attr; vb_loc}
         :: rem ->
           let param_void_k =
-            if is_void_sort sort then Void_cont (next_raise_count ())
+            if is_void_layout layout then Void_cont (next_raise_count ())
             else Not_void
           in
           let lam =
@@ -1463,11 +1463,11 @@ and transl_let ~scopes ?(add_regions=false) ?(in_structure=false)
           let lam = if add_regions then maybe_region lam else lam in
           let mk_body = transl rem in
           fun body ->
-            Matching.for_let ~scopes pat.pat_loc param_void_k lam sort pat
+            Matching.for_let ~scopes pat.pat_loc param_void_k lam layout pat
               body_kind (mk_body body)
       in
       transl pat_expr_list
-  | Recursive when List.for_all (fun { vb_sort; _} -> is_void_sort vb_sort)
+  | Recursive when List.for_all (fun { vb_layout; _} -> is_void_layout vb_layout)
                      pat_expr_list ->
     (* The `let rec` case where all the let-bound things are void is just the
        same as the non-recursive case, because their mutual references get
@@ -1500,7 +1500,7 @@ and transl_let ~scopes ?(add_regions=false) ?(in_structure=false)
         end;
         lam
       in
-      let is_void {vb_sort; _} = is_void_sort vb_sort in
+      let is_void {vb_layout; _} = is_void_layout vb_layout in
       let value_kind {vb_expr; _} =
         value_kind vb_expr.exp_env vb_expr.exp_type
       in
@@ -1671,7 +1671,7 @@ and transl_record ~scopes void_k kind loc env mode fields repres opt_init_expr =
     end
   end
 
-and transl_match ~scopes e arg sort pat_expr_list partial void_k =
+and transl_match ~scopes e arg layout pat_expr_list partial void_k =
   let kind = value_kind_if_not_void e void_k in
   let rewrite_case (val_cases, exn_cases, static_handlers as acc)
         ({ c_lhs; c_guard; c_rhs } as case) =
@@ -1697,10 +1697,10 @@ and transl_match ~scopes e arg sort pat_expr_list partial void_k =
         in
         (* Simplif doesn't like it if binders are not uniq, so we make sure to
            use different names in the value and the exception branches. *)
-        let ids_full = Typedtree.pat_bound_idents_full sort pv in
+        let ids_full = Typedtree.pat_bound_idents_full layout pv in
         let ids_kinds =
-          List.filter_map (fun (id, _, ty, sort) ->
-            if Kkind.can_make_void (Kkind.of_sort sort)
+          List.filter_map (fun (id, _, ty, layout) ->
+            if Kkind.can_make_void (Kkind.of_layout layout)
             then None
             else Some (id, Typeopt.value_kind pv.pat_env ty))
             ids_full
@@ -1728,7 +1728,7 @@ and transl_match ~scopes e arg sort pat_expr_list partial void_k =
     List.rev x, List.rev y, List.rev z
   in
   let lam_match =
-    if is_void_sort sort then
+    if is_void_layout layout then
       (* CR ccasinghino: The use of [Matching.for_function] here feels a bit
          sneaky, and results in an unneeded let binding even after simplif.  I'm
          not going to fix this now, or attempt to fold this code into the

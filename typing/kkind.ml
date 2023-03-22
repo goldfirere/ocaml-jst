@@ -14,7 +14,7 @@
 
 (* Kkinds *)
 
-module Sort = struct
+module Layout = struct
   type const =
     | Void
     | Value
@@ -63,7 +63,7 @@ module Sort = struct
     | Value, Value -> true
 
   let rec equate_var_const v1 c2 = match !v1 with
-    | Some s1 -> equate_sort_const s1 c2
+    | Some s1 -> equate_layout_const s1 c2
     | None -> v1 := Some (of_const c2); true
 
   and equate_var v1 s2 = match s2 with
@@ -77,12 +77,12 @@ module Sort = struct
     | None, None -> v1 := Some (of_var v2); true
   end
 
-  and equate_sort_const s1 c2 = match s1 with
+  and equate_layout_const s1 c2 = match s1 with
     | Const c1 -> equal_const_const c1 c2
     | Var v1 -> equate_var_const v1 c2
 
   and equate s1 s2 = match s1 with
-    | Const c1 -> equate_sort_const s2 c1
+    | Const c1 -> equate_layout_const s2 c1
     | Var v1 -> equate_var v1 s2
 
   module Debug_printers = struct
@@ -102,11 +102,9 @@ module Sort = struct
   end
 end
 
-type sort = Sort.t
-
 type t =
   | Any
-  | Sort of sort
+  | Layout of Layout.t
   | Immediate64
   (** We know for sure that values of types of this kkind are always immediate
       on 64-bit platforms. For other platforms, we know nothing about immediacy.
@@ -117,8 +115,8 @@ type t =
 (* constants *)
 
 let any = Any
-let void = Sort Sort.void
-let value = Sort Sort.value
+let void = Layout Layout.void
+let value = Layout Layout.value
 let immediate64 = Immediate64
 let immediate = Immediate
 
@@ -147,9 +145,9 @@ let equal_const (c1 : const) (c2 : const) = match c1, c2 with
 (******************************)
 (* construction *)
 
-let of_new_sort_var () = Sort (Sort.new_var ())
+let of_new_layout_var () = Layout (Layout.new_var ())
 
-let of_sort s = Sort s
+let of_layout s = Layout s
 
 let of_const : const -> t = function
   | Any -> Any
@@ -171,13 +169,13 @@ let of_attributes ~default attrs =
 
 type desc =
   | Const of const
-  | Var of Sort.var
+  | Var of Layout.var
 
 let repr ~default : t -> desc = function
   | Any -> Const Any
   | Immediate -> Const Immediate
   | Immediate64 -> Const Immediate64
-  | Sort s -> begin match Sort.repr ~default s with
+  | Layout s -> begin match Layout.repr ~default s with
     (* NB: this match isn't as silly as it looks: those are
        different constructors on the left than on the right *)
     | Const Void -> Const Void
@@ -189,23 +187,23 @@ let get = repr ~default:None
 
 let of_desc = function
   | Const c -> of_const c
-  | Var v -> of_sort (Sort.of_var v)
+  | Var v -> of_layout (Layout.of_var v)
 
 (* CR layouts: this function is suspect; it seems likely to reisenberg
    that refactoring could get rid of it *)
-let sort_of_kkind l =
+let layout_of_kkind l =
   match get l with
-  | Const Void -> Sort.void
-  | Const (Value | Immediate | Immediate64) -> Sort.value
-  | Const Any -> Misc.fatal_error "Kkind.sort_of_kkind"
-  | Var v -> Sort.of_var v
+  | Const Void -> Layout.void
+  | Const (Value | Immediate | Immediate64) -> Layout.value
+  | Const Any -> Misc.fatal_error "Kkind.layout_of_kkind"
+  | Var v -> Layout.of_var v
 
 (*********************************)
 (* pretty printing *)
 
 let to_string lay = match get lay with
   | Const c -> string_of_const c
-  | Var _ -> "<sort variable>"
+  | Var _ -> "<layout variable>"
 
 let format ppf t = Format.fprintf ppf "%s" (to_string t)
 
@@ -227,18 +225,18 @@ module Violation = struct
         pr "%t has layout %a, which does not overlap with %a." offender
           format l1 format l2
 
-  let report_with_offender_sort ~offender ppf t =
-    let sort_expected =
+  let report_with_offender_layout ~offender ppf t =
+    let layout_expected =
       "A representable layout was expected, but"
     in
     let pr fmt = Format.fprintf ppf fmt in
     match t with
     | Not_a_subkkind (l1, l2) ->
       pr "%s@ %t has layout %a, which is not a sublayout of %a."
-        sort_expected offender format l1 format l2
+        layout_expected offender format l1 format l2
     | No_intersection (l1, l2) ->
       pr "%s@ %t has layout %a, which does not overlap with %a."
-        sort_expected offender format l1 format l2
+        layout_expected offender format l1 format l2
 
   let report_with_name ~name ppf t =
     let pr fmt = Format.fprintf ppf fmt in
@@ -258,8 +256,8 @@ let equate (l1 : t) (l2 : t) = match l1, l2 with
   | Any, Any -> true
   | Immediate64, Immediate64 -> true
   | Immediate, Immediate -> true
-  | Sort s1, Sort s2 -> Sort.equate s1 s2
-  | (Any | Immediate64 | Immediate | Sort _), _ -> false
+  | Layout s1, Layout s2 -> Layout.equate s1 s2
+  | (Any | Immediate64 | Immediate | Layout _), _ -> false
 
 let intersection l1 l2 =
   let err = Error (Violation.No_intersection (l1, l2)) in
@@ -298,7 +296,7 @@ let get_defaulting ~default t =
   | Const result -> result
   | Var _ -> assert false
 
-let constrain_default_void = get_defaulting ~default:Sort.Void
+let constrain_default_void = get_defaulting ~default:Layout.Void
 let can_make_void l = Void = constrain_default_void l
 let default_to_value t =
   ignore (get_defaulting ~default:Value t)
@@ -311,7 +309,7 @@ module Debug_printers = struct
 
   let t ppf : t -> unit = function
     | Any         -> fprintf ppf "Any"
-    | Sort s      -> fprintf ppf "Sort %a" Sort.Debug_printers.t s
+    | Layout s    -> fprintf ppf "Layout %a" Layout.Debug_printers.t s
     | Immediate64 -> fprintf ppf "Immediate64"
     | Immediate   -> fprintf ppf "Immediate"
 end

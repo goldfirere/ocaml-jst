@@ -3987,14 +3987,14 @@ and type_expect_
       begin_def ();
       let arg = type_exp env arg_expected_mode sarg in
       end_def ();
-      let sort =
-        match type_sort env arg.exp_type with
+      let layout =
+        match type_layout env arg.exp_type with
         | Ok s -> s
         | Error err ->
           (* CJC XXX errors: gross *)
           let err =
             Errortrace.(unification_error
-                          ~trace:[Bad_kkind_sort (arg.exp_type,err)])
+                          ~trace:[Bad_kkind_layout (arg.exp_type,err)])
           in
           raise (Error(arg.exp_loc, env,
                        Expr_type_clash(err, None, Some (arg.exp_desc))))
@@ -4005,7 +4005,7 @@ and type_expect_
         type_cases Computation env arg_pat_mode expected_mode
           arg.exp_type ty_expected_explained true loc caselist in
       re {
-        exp_desc = Texp_match(arg, sort, cases, partial);
+        exp_desc = Texp_match(arg, layout, cases, partial);
         exp_loc = loc; exp_extra = [];
         exp_type = instance ty_expected;
         exp_mode = expected_mode.mode;
@@ -4145,7 +4145,7 @@ and type_expect_
               raise (Error (exp.exp_loc, env, error))
         in
         match expected_opath, opt_exp_opath with
-        | None, None -> newvar (Kkind.of_new_sort_var ()), None
+        | None, None -> newvar (Kkind.of_new_layout_var ()), None
         | Some _, None -> ty_expected, expected_opath
         | Some(_, _, true), Some _ -> ty_expected, expected_opath
         | (None | Some (_, _, false)), Some (_, p', _) ->
@@ -4298,7 +4298,7 @@ and type_expect_
       let (record, rmode, label, expected_type) =
         type_label_access env srecord Env.Mutation lid in
       let ty_record =
-        if expected_type = None then newvar (Kkind.of_new_sort_var ())
+        if expected_type = None then newvar (Kkind.of_new_layout_var ())
         else record.exp_type
       in
       let (label_loc, label, newval) =
@@ -5848,7 +5848,7 @@ and type_argument ?explanation ?recarg env (mode : expected_mode) sarg
       re { texp with exp_type = ty_fun; exp_mode = mode.mode;
              exp_desc =
                Texp_let (Nonrecursive,
-                         [{vb_pat=let_pat; vb_expr=texp; vb_sort=Kkind.Sort.value;
+                         [{vb_pat=let_pat; vb_expr=texp; vb_layout=Kkind.Layout.value;
                            vb_attributes=[]; vb_loc=Location.none;
                           }],
                          func let_var) }
@@ -6482,8 +6482,8 @@ and type_let
          attrs, pat_mode, exp_mode, spat)
       spat_sexp_list in
   let is_recursive = (rec_flag = Recursive) in
-  let sorts = List.map (fun _ -> Kkind.Sort.new_var ()) spatl in
-  let nvs = List.map (fun s -> newvar (Kkind.of_sort s)) sorts in
+  let layouts = List.map (fun _ -> Kkind.Layout.new_var ()) spatl in
+  let nvs = List.map (fun s -> newvar (Kkind.of_layout s)) layouts in
   if is_recursive then begin_def ();
   let (pat_list, new_env, force, pvs, unpacks) =
     type_pattern_list Value existential_context env spatl nvs allow in
@@ -6698,11 +6698,11 @@ and type_let
            generalize_and_check_univars env "definition" exp expected_ty vars)
     pat_list exp_list;
   let l = List.combine pat_list exp_list in
-  let l = List.combine sorts l in
+  let l = List.combine layouts l in
   let l =
     List.map2
       (fun (s, ((_,p,_), (e, _))) pvb ->
-        {vb_pat=p; vb_expr=e; vb_sort = s; vb_attributes=pvb.pvb_attributes;
+        {vb_pat=p; vb_expr=e; vb_layout = s; vb_attributes=pvb.pvb_attributes;
          vb_loc=pvb.pvb_loc;
         })
       l spat_sexp_list

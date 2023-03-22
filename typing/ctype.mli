@@ -471,13 +471,13 @@ val get_unboxed_type_representation : Env.t -> type_expr -> type_expr
 val estimate_type_kkind : Env.t ->  type_expr -> Kkind.t
 val type_kkind : Env.t -> type_expr -> Kkind.t
 
-(* Find a type's sort (constraining it to be an arbitrary sort variable, if
+(* Find a type's layout (constraining it to be an arbitrary layout variable, if
    needed) *)
-val type_sort : Env.t -> type_expr -> (Kkind.sort, Kkind.Violation.t) result
+val type_layout : Env.t -> type_expr -> (Kkind.Layout.t, Kkind.Violation.t) result
 
 (* Kkind checking. [constrain_type_kkind] will update the kkind of type
    variables to make the check true, if possible.  [check_decl_kkind] and
-   [check_type_kkind] won't, but will still instantiate sort variables.
+   [check_type_kkind] won't, but will still instantiate layout variables.
 
    For convenience, on success these functions return the most precise kkind we
    found for the given type during checking (which may be an upper bound). *)

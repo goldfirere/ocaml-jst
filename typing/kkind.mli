@@ -31,23 +31,23 @@
    * It is very easy to search for and replace when we have a better name.
 *)
 
-module Sort : sig
-  (** A sort classifies how a type is represented at runtime. Every concrete
-      kkind has a sort, and knowing the sort is sufficient for knowing the
+module Layout : sig
+  (** A layout classifies how a type is represented at runtime. Every concrete
+      kkind has a layout, and knowing the layout is sufficient for knowing the
       calling convention of values of a given type. *)
   type t
 
-  (** These are the constant sorts -- fully determined and without variables *)
+  (** These are the constant layouts -- fully determined and without variables *)
   type const =
     | Void
       (** No run time representation at all *)
     | Value
       (** Standard ocaml value representation *)
 
-  (** A sort variable that can be unified during type-checking. *)
+  (** A layout variable that can be unified during type-checking. *)
   type var
 
-  (** Create a new sort variable that can be unified. *)
+  (** Create a new layout variable that can be unified. *)
   val new_var : unit -> t
 
   val of_const : const -> t
@@ -56,7 +56,7 @@ module Sort : sig
   val void : t
   val value : t
 
-  (** This checks for equality, and sets any variables to make two sorts
+  (** This checks for equality, and sets any variables to make two layouts
       equal, if possible *)
   val equate : t -> t -> bool
 
@@ -65,8 +65,6 @@ module Sort : sig
     val var : Format.formatter -> var -> unit
   end
 end
-
-type sort = Sort.t
 
 (* This module describes kkinds, which classify types. Layouts are arranged
    in the following lattice:
@@ -83,8 +81,8 @@ type sort = Sort.t
 *)
 
 (** A Kkind.t is a full description of the runtime representation of values
-    of a given type. It includes sorts, but also the abstract top kkind
-    [Any] and subkkinds of other sorts, such as [Immediate]. *)
+    of a given type. It includes layouts, but also the abstract top kkind
+    [Any] and subkkinds of other layouts, such as [Immediate]. *)
 type t
 
 (******************************)
@@ -122,10 +120,10 @@ val immediate : t
 (******************************)
 (* construction *)
 
-(** Create a fresh sort variable, packed into a kkind. *)
-val of_new_sort_var : unit -> t
+(** Create a fresh layout variable, packed into a kkind. *)
+val of_new_layout_var : unit -> t
 
-val of_sort : sort -> t
+val of_layout : Layout.t -> t
 val of_const : const -> t
 
 (** Translate a user kkind annotation to a kkind *)
@@ -139,18 +137,18 @@ val of_attributes : default:t -> Parsetree.attributes -> t
 
 type desc =
   | Const of const
-  | Var of Sort.var
+  | Var of Layout.var
 
 (** Extract the [const] from a [Kkind.t], looking through unified
-    sort variables. Returns [Var] if the final, non-variable kkind has not
+    layout variables. Returns [Var] if the final, non-variable kkind has not
     yet been determined. *)
 val get : t -> desc
 
 val of_desc : desc -> t
 
-(** Returns the sort corresponding to the kkind.  Call only on representable
+(** Returns the layout corresponding to the kkind.  Call only on representable
     kkinds - errors on Any. *)
-val sort_of_kkind : t -> sort
+val layout_of_kkind : t -> Layout.t
 
 (*********************************)
 (* pretty printing *)
@@ -167,7 +165,7 @@ module Violation : sig
 
   val report_with_offender :
     offender:(Format.formatter -> unit) -> Format.formatter -> t -> unit
-  val report_with_offender_sort :
+  val report_with_offender_layout :
     offender:(Format.formatter -> unit) -> Format.formatter -> t -> unit
   val report_with_name : name:string -> Format.formatter -> t -> unit
 end
@@ -187,8 +185,8 @@ val intersection : t -> t -> (t, Violation.t) Result.t
 (** [sub t1 t2] returns [Ok t1] iff [t1] is a subkkind of
   of [t2].  The current hierarchy is:
 
-  Any > Sort Value > Immediate64 > Immediate
-  Any > Sort Void
+  Any > Layout Value > Immediate64 > Immediate
+  Any > Layout Void
 
   Return [Error _] if the coercion is not possible. We return a kkind in the
   success case because it sometimes saves time / is convenient to have the

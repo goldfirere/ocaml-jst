@@ -1616,9 +1616,9 @@ let transl_toplevel_item ~scopes item =
           lambda_unit Pintval
       else transl_exp ~scopes Not_void expr
   | Tstr_value(Nonrecursive,
-               [{vb_pat = {pat_desc=Tpat_any}; vb_sort = sort;
+               [{vb_pat = {pat_desc=Tpat_any}; vb_layout = layout;
                  vb_expr = expr}]) ->
-      if Kkind.can_make_void (Kkind.of_sort sort) then
+      if Kkind.can_make_void (Kkind.of_layout layout) then
         catch_void (fun void_k -> transl_exp ~scopes void_k expr)
           lambda_unit Pintval
       else
