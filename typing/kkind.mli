@@ -31,53 +31,18 @@
    * It is very easy to search for and replace when we have a better name.
 *)
 
-module Layout : sig
-  (** A layout classifies how a type is represented at runtime. Every concrete
-      kkind has a layout, and knowing the layout is sufficient for knowing the
-      calling convention of values of a given type. *)
-  type t
+(** This module describes kkinds, which classify types. Kkinds are arranged
+    in the following lattice:
 
-  (** These are the constant layouts -- fully determined and without variables *)
-  type const =
-    | Void
-      (** No run time representation at all *)
-    | Value
-      (** Standard ocaml value representation *)
-
-  (** A layout variable that can be unified during type-checking. *)
-  type var
-
-  (** Create a new layout variable that can be unified. *)
-  val new_var : unit -> t
-
-  val of_const : const -> t
-  val of_var : var -> t
-
-  val void : t
-  val value : t
-
-  (** This checks for equality, and sets any variables to make two layouts
-      equal, if possible *)
-  val equate : t -> t -> bool
-
-  module Debug_printers : sig
-    val t : Format.formatter -> t -> unit
-    val var : Format.formatter -> var -> unit
-  end
-end
-
-(* This module describes kkinds, which classify types. Layouts are arranged
-   in the following lattice:
-
-   {[
-               any
-             /    \
-          value  void
-            |
-        immediate64
-            |
-        immediate
-   ]}
+    {[
+                any
+              /    \
+           value  void
+             |
+         immediate64
+             |
+         immediate
+    ]}
 *)
 
 (** A Kkind.t is a full description of the runtime representation of values
@@ -89,7 +54,7 @@ type t
 (* constants *)
 
 (** Constant kkinds are used both for user-written annotations and within
-    the type checker when we know a kkind has no variables *)
+    the type checker when we know a kkinds has no variables *)
 type const = Asttypes.const_kkind =
   | Any
   | Value
@@ -139,14 +104,14 @@ type desc =
   | Const of const
   | Var of Layout.var
 
-(** Extract the [const] from a [Kkind.t], looking through unified
-    layout variables. Returns [Var] if the final, non-variable kkind has not
+(** Extract the [const] from a [Layout.t], looking through unified
+    sort variables. Returns [Var] if the final, non-variable layout has not
     yet been determined. *)
 val get : t -> desc
 
 val of_desc : desc -> t
 
-(** Returns the layout corresponding to the kkind.  Call only on representable
+(** Returns the layout corresponding to the kkind.  Call only on concrete
     kkinds - errors on Any. *)
 val layout_of_kkind : t -> Layout.t
 

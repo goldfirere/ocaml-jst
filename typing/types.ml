@@ -452,9 +452,9 @@ let decl_is_abstract decl =
 
 let all_void kkinds =
   Array.for_all (fun kk ->
-    match Kkind.get kk with
-    | Const Void -> true
-    | Const (Value | Immediate64 | Immediate | Any) | Var _ -> false)
+    match Kkind.get_layout kk with
+    | Some Void -> true
+    | Some Value | None -> false)
     kkinds
 
 let kkind_bound_of_record_representation : record_representation -> _ =

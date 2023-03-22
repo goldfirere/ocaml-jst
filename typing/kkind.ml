@@ -12,113 +12,80 @@
 (*                                                                        *)
 (**************************************************************************)
 
-(* Kkinds *)
-
 module Layout = struct
-  type const =
-    | Void
-    | Value
-
   type t =
-    | Var of var
-    | Const of const
-  and var = t option ref
+    | Value
+    | Void
+end
 
-  let void = Const Void
-  let value = Const Value
+module External = struct
+  type t =
+    | External
+    | External64   (* external only on 64-bit platforms *)
+    | Internal
 
-  let of_const = function
-    | Void -> void
-    | Value -> value
+  let top = Internal
+end
 
-  let of_var v = Var v
+module Concrete = struct
+  type t =
+    | Abstract
+    | Concrete
+end
 
-  let new_var () = Var (ref None)
+module Local = struct
+  type t =
+    | Global
+    | Local
 
-  let rec repr ~default : t -> t = function
-    | Const _ as t -> t
-    | Var r as t -> begin match !r with
-      | None -> begin match default with
-        | None -> t
-        | Some const -> begin
-            let t = of_const const in
-            r := Some t;
-            t
-          end
-      end
-      | Some s -> begin
-          let result = repr ~default s in
-          r := Some result; (* path compression *)
-          result
-        end
-    end
-
-  (***********************)
-  (* equality *)
-
-  let equal_const_const c1 c2 = match c1, c2 with
-    | Void, Void -> true
-    | Void, Value -> false
-    | Value, Void -> false
-    | Value, Value -> true
-
-  let rec equate_var_const v1 c2 = match !v1 with
-    | Some s1 -> equate_layout_const s1 c2
-    | None -> v1 := Some (of_const c2); true
-
-  and equate_var v1 s2 = match s2 with
-    | Const c2 -> equate_var_const v1 c2
-    | Var v2 -> equate_var_var v1 v2
-
-  and equate_var_var v1 v2 = v1 == v2 || begin
-    match !v1, !v2 with
-    | Some s1, _ -> equate_var v2 s1
-    | _, Some s2 -> equate_var v1 s2
-    | None, None -> v1 := Some (of_var v2); true
-  end
-
-  and equate_layout_const s1 c2 = match s1 with
-    | Const c1 -> equal_const_const c1 c2
-    | Var v1 -> equate_var_const v1 c2
-
-  and equate s1 s2 = match s1 with
-    | Const c1 -> equate_layout_const s2 c1
-    | Var v1 -> equate_var v1 s2
-
-  module Debug_printers = struct
-    open Format
-
-    let rec t ppf = function
-      | Var v   -> fprintf ppf "Var %a" var v
-      | Const c -> fprintf ppf (match c with
-                                | Void  -> "Void"
-                                | Value -> "Value")
-
-    and opt_t ppf = function
-      | Some s -> fprintf ppf "Some %a" t s
-      | None   -> fprintf ppf "None"
-
-    and var ppf v = fprintf ppf "{ contents = %a }" opt_t (!v)
-  end
+  let top = Local
 end
 
 type t =
-  | Any
-  | Layout of Layout.t
-  | Immediate64
-  (** We know for sure that values of types of this kkind are always immediate
-      on 64-bit platforms. For other platforms, we know nothing about immediacy.
-  *)
-  | Immediate
+  { layout : Layout.t option
+  ; concrete : Concrete.t
+
+  ; external_ : External.t
+  ; local : Local.t
+  }
 
 (******************************)
 (* constants *)
 
-let any = Any
-let void = Layout Layout.void
-let value = Layout Layout.value
-let immediate64 = Immediate64
-let immediate = Immediate
+let any =
+  { layout = None
+  ; concrete = Abstract
+  ; external_ = External.top
+  ; local = Local.top
+  }
+
+let void =
+  { layout = Void
+  ; concrete = Concrete
+  ; external_ = External
+  ; local = Global
+  }
+
+let value =
+  { layout = Value
+  ; concrete = Concrete
+  ; external_ = External.top
+  ; local = Local.top
+  }
+
+let immediate64 =
+  { layout = Value
+  ; concrete = Concrete
+  ; external_ = External64
+  ; local = Local.top
+  }
+
+let immediate =
+  { layout = Value
+  ; concrete = Concrete
+  ; external_ = External
+  ; local = Global
+  }
 
 type const = Asttypes.const_kkind =
   | Any
