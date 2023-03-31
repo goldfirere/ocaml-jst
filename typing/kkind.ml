@@ -12,25 +12,124 @@
 (*                                                                        *)
 (**************************************************************************)
 
+(********************)
+(* Descriptors *)
+
+module type Descriptor = sig
+  type t
+  val top : t
+  val sub : t -> t -> bool
+end
+
 module Layout = struct
-  type t =
-    | Value
-    | Void
+
+  (* short for [Representable] *)
+  module Rep = struct
+
+    module Const = struct
+      type t =
+        | Value
+        | Void
+
+      let equal t1 t2 = match t1, t2 with
+        | Value, Value -> true
+        | Void, Void -> true
+        | (Value | Void), _ -> false
+    end
+
+    module Tc = struct
+      type var = t option ref
+
+      (* CR layouts: would it be more efficient to inline [const] here? *)
+      and t =
+        | Const of Const.t
+        | Var of var
+
+      (* also does path compression *)
+      (* post-condition: if this returns Var v, then !v = None *)
+      let deref v : t = match !v with
+        | Some (Const _ as t) -> t
+        | Some (Var next_v) ->
+           let result = deref next_v in
+           v := Some result; (* CR layouts: should we only write when there is a change? *)
+           result
+        | None -> Var v
+
+      let equate_const_var c1 v2 = match deref v2 with
+        | Const c2 -> Const.equal c1 c2
+        | Var v2' -> v2' := Some c1; true
+
+      let equate_var_var v1 v2 = v1 == v2 || match deref v1, deref v2 with
+        | Const c1, Const c2 -> Const.equal c1 c2
+        | Var v1, (Var v2 as t2) -> v1 == v2 || (* this avoids self-reference *)
+                                    (v1 := t2; true)
+        | Var v1, (Const _ as t2) -> v1 := t2; true
+        | (Const _ as t1), Var v2 -> v2 := t1; true
+
+      let equate t1 t2 = match t1, t2 with
+        | Const c1, Const c2 -> Const.equal c1 c2
+        | Const c1, Var v2 -> equate_const_var c1 v2
+        | Var v1, Const c2 -> equate_const_var c2 v1
+        | Var v1, Var v2 -> equate_var_var v1 v2
+
+      let void = Const void
+      let value = Const Value
+    end
+
+    (* this equality is not exported in the mli file; maybe someday we'll actually
+       make a different type here.
+       INVARIANT: No variables here. *)
+    type t = Tc.t
+
+    let equal t1 t2 = match t1, t2 with
+      | Const c1, Const c2 -> Const.equal c1 c2
+      | (Var _, _) | (_, Var _) -> assert false
+
+    let void = Tc.void
+    let value = Tc.value
+  end
+
+  module Tc = struct
+    type t =
+      | Rep of Rep.Tc.t
+      | Any
+
+    let top = Any
+
+    let sub sub super = match sub, super with
+      | _, Any -> true
+      | Any, Rep _ -> false
+      | Rep r1, Rep r2 -> Rep.Tc.equate r1 r2
+
+    let void = Rep Rep.Tc.void
+    let value = Rep Rep.Tc.value
+  end
+
+  (* This equality is not exported in the mli file. *)
+  type t = Tc.t
+
+  let top = Any
+
+  let sub sub super = match sub, super with
+    | _, Any -> true
+    | Any, Rep _ -> false
+    | Rep r1, Rep r2 -> Rep.equal r1 r2
+
+  let void = Tc.void
+  let value = Tc.value
 end
 
 module External = struct
   type t =
     | External
-    | External64   (* external only on 64-bit platforms *)
+    | External64
     | Internal
 
   let top = Internal
-end
-
-module Concrete = struct
-  type t =
-    | Abstract
-    | Concrete
+  let sub sub super = match sub, super with
+    | Internal, (External | External64) -> false
+    | External64, External -> false
+    | (External | External64, Internal), _ -> true
 end
 
 module Local = struct
@@ -39,50 +138,53 @@ module Local = struct
     | Local
 
   let top = Local
+  let sub sub super = match sub, super with
+    | Local, Global -> false
+    | (Local | Global), _ -> true
 end
 
-type t =
-  { layout : Layout.t option
-  ; concrete : Concrete.t
+(*******************************)
+(* Kkinds *)
 
-  ; external_ : External.t
-  ; local : Local.t
-  }
+module Tc = struct
+  type t =
+    { layout : Layout.Tc.t
+    ; external_ : External.t
+    ; local : Local.t
+    }
+end
+
+type t = Tc.t
 
 (******************************)
 (* constants *)
 
 let any =
-  { layout = None
-  ; concrete = Abstract
+  { layout = Any
   ; external_ = External.top
   ; local = Local.top
   }
 
 let void =
-  { layout = Void
-  ; concrete = Concrete
+  { layout = Layout.Tc.void
   ; external_ = External
   ; local = Global
   }
 
 let value =
-  { layout = Value
-  ; concrete = Concrete
+  { layout = Layout.Tc.value
   ; external_ = External.top
   ; local = Local.top
   }
 
 let immediate64 =
-  { layout = Value
-  ; concrete = Concrete
+  { layout = Layout.Tc.value
   ; external_ = External64
   ; local = Local.top
   }
 
 let immediate =
-  { layout = Value
-  ; concrete = Concrete
+  { layout = Layout.Tc.value
   ; external_ = External
   ; local = Global
   }
@@ -243,17 +345,18 @@ let intersection l1 l2 =
       (of_const imm)
   | _, _ -> equality_check (equate l1 l2) l1
 
-let sub sub super =
-  let ok = Ok sub in
-  let err = Error (Violation.Not_a_subkkind (sub,super)) in
-  let equality_check is_eq = if is_eq then ok else err in
-  match get sub, get super with
-  | _, Const Any -> ok
-  | Const c1, Const c2 when equal_const c1 c2 -> ok
-  | Const Immediate, Const Immediate64 -> ok
-  | Const (Immediate64 | Immediate), _ ->
-    equality_check (equate super value)
-  | _, _ -> equality_check (equate sub super)
+let sub { layout = layout_sub
+        ; concrete = concrete_sub
+        ; external_ = external_sub
+        ; local = local_sub }
+        { layout = layout_super
+        ; concrete = concrete_super
+        ; external_ = external_super
+        ; local = local_super } =
+  Layout.equal layout_sub layout_super &&
+  Concrete.sub concrete_sub concrete_super &&
+  External.sub external_sub external_super &&
+  Local.sub local_sub local_super
 
 (*********************************)
 (* defaulting *)

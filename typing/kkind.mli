@@ -43,7 +43,63 @@
              |
          immediate
     ]}
+
+    Kkinds are a composition of several {i descriptors}, where a
+    descriptor describes one aspect of a type, such as its memory
+    representation or whether it needs to be scanned by the garbage collector.
+
+    The kkinds listed in the lattice above are the user-available ones, but other
+    combinations of descriptors are also possible.
 *)
+
+(** The module type [Descriptor] describes the interface to kkind descriptors. *)
+module type Descriptor = sig
+  type t
+
+  (** Each descriptor forms a lattice; [top] is the top element of the lattice. *)
+  val top : t
+
+  (** Check whether one descriptor is beneath another in the lattice. *)
+  val sub : t -> t -> bool
+end
+
+(** A [Layout.t] classifies how a type is represented at runtime. Every concrete
+    kkind has a layout, and knowing the sort is sufficient for knowing the
+    calling convention of values of a given type. *)
+module Layout : sig
+  type t
+
+  include Descriptor with type t := t
+end
+
+(** [External.t] describes whether a type is external to the garbage
+    collector.  Values of types that are external to the garbage
+    collector need not be scanned during garbage collection. This
+    descriptor is not relevant for non-[Value] types, as the garbage
+    collector scans only [Value]s.
+*)
+module External : sig
+  (** [External <= External64 <= Internal], meaning that an [External]
+      can always safely be treated as an [Internal] (scanned unnecessarily).
+  *)
+  type t =
+    | External
+    | External64  (** external only on 64-bit platforms *)
+    | Internal
+
+  include Descriptor with type t := t
+end
+
+(** [Local.t] describes whether a type can escape from a local context. *)
+module Local : sig
+  (** [Global <= Local], because we can always forget that a type has
+      the ability to escape from a local context. *)
+  type t =
+    | Global
+    | Local
+
+  include Descriptor with type t := t
+end
 
 (** A Kkind.t is a full description of the runtime representation of values
     of a given type. It includes layouts, but also the abstract top kkind
@@ -79,7 +135,9 @@ val value : t
     platforms, we know nothing other than that it's a value. *)
 val immediate64 : t
 
-(** We know for sure that values of types of this kkind are always immediate *)
+(** We know for sure that values of types of this kkind are always immediate;
+    this means that they are [Value]s that do not need to be scanned by the
+    garbage collector. *)
 val immediate : t
 
 (******************************)

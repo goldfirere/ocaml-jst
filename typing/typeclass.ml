@@ -1350,11 +1350,9 @@ and class_expr_aux cl_num val_env met_env virt self_scope scl =
           (fun (id, modes_and_layouts) (vals, met_env) ->
              List.iter
                (fun (loc, mode, layout) ->
-                  Typecore.escape ~loc ~env:val_env mode;
-                  match Kkind.sub (Kkind.of_layout layout) Kkind.value with
-                  | Ok _ -> ()
-                  | Error err ->
-                    raise (Error(loc,met_env,
+                 Typecore.escape ~loc ~env:val_env mode;
+                 if not (Kkind.Layout.is_value layout)
+                 then raise (Error(loc,met_env,
                                  Non_value_binding (Ident.name id,err)))
                )
                modes_and_layouts;
