@@ -45,6 +45,15 @@ module Sort : sig
       equal, if possible *)
   val equate : t -> t -> bool
 
+  val format : Format.formatter -> t -> unit
+
+  (** Defaults this sort to void if possible; returns true if this succeeded
+      (or if the sort was already void) *)
+  val can_make_void : t -> bool
+
+  (** Defaults any variables to value; leaves other sorts alone *)
+  val default_to_value : t -> unit
+
   module Debug_printers : sig
     val t : Format.formatter -> t -> unit
     val var : Format.formatter -> var -> unit
@@ -73,46 +82,26 @@ module Layout : sig
   type t
 
   (******************************)
-  (* constants *)
-
-  (** Constant layouts are used both for user-written annotations and within
-      the type checker when we know a layout has no variables *)
-  type const = Asttypes.const_layout =
-    | Any
-    | Value
-    | Void
-    | Immediate64
-    | Immediate
-  val string_of_const : const -> string
-  val equal_const : const -> const -> bool
-
-  (** This layout is the top of the layout lattice. All types have layout [any].
-      But we cannot compile run-time manipulations of values of types with
-      layout [any]. *)
-  val any : t
-
-  (** This is a variant of the [any] layout used when we have to fill it in
-      because there's a missing .cmi file for the specified type. *)
-  val missing_cmi_any : Path.t -> t
-
-  (** Value of types of this layout are not retained at all at runtime *)
-  val void : t
-
-  (** This is the layout of normal ocaml values *)
-  val value : t
-
-  (** Values of types of this layout are immediate on 64-bit platforms; on other
-      platforms, we know nothing other than that it's a value. *)
-  val immediate64 : t
-
-  (** We know for sure that values of types of this layout are always immediate *)
-  val immediate : t
-
-  (******************************)
   (* errors *)
 
-  type fixed_layout_reason =
+  type concrete_layout_reason =
+    | Match
+    | Constructor_declaration of int
+    | Label_declaration of Ident.t
+    | Unannotated_type_parameter
+    | Record_projection
+    | Record_assignment
     | Let_binding
+    | Structure_element
+
+  type annotation_context =
+    | Type_declaration of Path.t
+    | Type_parameter of Path.t * string
+    | With_constraint of string
+    | Newtype_declaration of string
+
+   type value_creation_reason =
+    | Class_let_binding
     | Function_argument
     | Function_result
     | Tuple_element
@@ -122,57 +111,73 @@ module Layout : sig
     | Instance_variable
     | Object_field
     | Class_field
-
-  type concrete_layout_reason =
-    | Match
-    | Constructor_declaration of int
-    | Label_declaration of Ident.t
-
-  type annotation_location =
-    | Type_declaration of Path.t
-    | Type_parameter of Path.t * string
-    | With_constraint of Location.t
-    | Newtype_declaration of string Location.loc
-
-  type reason =
-    | Fixed_layout of fixed_layout_reason
-    | Concrete_layout of concrete_layout_reason
-    | Annotated of annotation_location
-    | Gadt_equation of Path.t
-    | Unified_with_tvar of string option
-        (* CR layouts v2: This really needs to carry a type, in case it
-           gets further unified. But that makes layouts recursive with
-           types, which will involve a painful restructuring. Still, RAE
-           thinks it's inevitable. *)
+    | Boxed_record
+    | Boxed_variant
+    | Extensible_variant
+    | Primitive of Ident.t
+    | Type_argument (* CR layouts: Should this take a Path.t? *)
+    | Tuple
+    | Row_variable
+    | Polymorphic_variant
+    | Arrow
+    | Tfield
+    | Tnil
+    | First_class_module
+    | Separability_check
+    | Univar
+    | Polymorphic_variant_field
+    | Default_type_layout
+    | Float_record_field
+    | Existential_type_variable
+    | Array_element
+    | Lazy_expression
+    | Class_argument
+    | Structure_element
+    | Debug_printer_argument
     | V1_safety_check
-    | Dummy_reason_result_ignored
+    | Unknown of string  (* CR layouts: get rid of these *)
+
+  type immediate_creation_reason =
+    | Empty_record
+    | Empty_variant
+    | Primitive of Ident.t
+    | Immediate_polymorphic_variant
+    | Gc_ignorable_check
+    | Value_kind
+
+  type immediate64_creation_reason =
+    | Local_mode_cross_check
+    | Gc_ignorable_check
+    | Separability_check
+
+  type void_creation_reason =
+    | V1_safety_check
+
+  type any_creation_reason =
+    | Missing_cmi of Path.t
+    | Wildcard
+    | Unification_var
+    | Initial_typedecl_env
+    | Dummy_layout
+
+  type creation_reason =
+    | Annotated of annotation_context * Location.t
+    | Value_creation of value_creation_reason
+    | Immediate_creation of immediate_creation_reason
+    | Immediate64_creation of immediate64_creation_reason
+    | Void_creation of void_creation_reason
+    | Any_creation of any_creation_reason
+    | Concrete_creation of concrete_layout_reason
+
+  type intersection_reason =
+    | Gadt_equation of Path.t
+    | Tyvar_refinement (* CR layouts: this needs to carry a type_expr,
+                          but that's loopy *)
 
   module Violation : sig
     type message =
       | Not_a_sublayout of t * t
       | No_intersection of t * t
-
-    type violation = private
-      { message : message
-      ; missing_cmi : bool
-          (** Was this error caused by a missing .cmi file?  This is redundant
-              with information stored in the [message], but is more easily
-              inspectable by external code.  The error-printing code does not
-              inspect this value; it's only used for program logic. *)
-      }
-
-    val not_a_sublayout : t -> t -> violation
-
-    val no_intersection : t -> t -> violation
-
-    (* CR layouts: Is [missing_cmi] really the best thing?  Maybe some functions
-       need to return success | error | missing_cmi. *)
-
-    (** If we later discover that the left-hand layout was from a missing .cmi
-        file, and if that layout is [any], this function will update that layout
-        to report what type caused that (a la [missing_cmi_any]). *)
-    val add_missing_cmi_for_lhs :
-      missing_cmi_for:Path.t -> violation -> violation
 
     (* CR layouts: The [offender] arguments below are always
        [Printtyp.type_expr], so we should either stash that in a ref (like with
@@ -196,34 +201,68 @@ module Layout : sig
 
     (** Simpler version of [report_with_offender] for when the thing that had an
         unexpected layout is available as a string. *)
-    val report_with_name : name:string -> Format.formatter -> violation -> unit
+    val report_with_name : name:string -> Format.formatter -> t -> unit
 
-    (** Provides the [Printtyp.path] formatter back up the dependency chain to
-        this module. *)
-    val set_printtyp_path : (Format.formatter -> Path.t -> unit) -> unit
+    (** If we later discover that the left-hand layout was from a missing .cmi
+        file, this function will update that layout
+        to report what missing type caused that
+        . *)
+    val add_missing_cmi_for_lhs : missing_cmi_for:Path.t -> t -> t
   end
+
+  (******************************)
+  (* constants *)
+
+  (** Constant layouts are used both for user-written annotations and within
+      the type checker when we know a layout has no variables *)
+  type const = Asttypes.const_layout =
+    | Any
+    | Value
+    | Void
+    | Immediate64
+    | Immediate
+  val string_of_const : const -> string
+  val equal_const : const -> const -> bool
+
+  (** This layout is the top of the layout lattice. All types have layout [any].
+      But we cannot compile run-time manipulations of values of types with layout
+      [any]. *)
+  val any : creation:any_creation_reason -> t
+
+  (** Value of types of this layout are not retained at all at runtime *)
+  val void : creation:void_creation_reason -> t
+
+  (** This is the layout of normal ocaml values *)
+  val value : creation:value_creation_reason -> t
+
+  (** Values of types of this layout are immediate on 64-bit platforms; on other
+      platforms, we know nothing other than that it's a value. *)
+  val immediate64 : creation:immediate64_creation_reason -> t
+
+  (** We know for sure that values of types of this layout are always immediate *)
+  val immediate : creation:immediate_creation_reason -> t
 
   (******************************)
   (* construction *)
 
   (** Create a fresh sort variable, packed into a layout. *)
-  val of_new_sort_var : unit -> t
+  val of_new_sort_var : creation:concrete_layout_reason -> t
 
-  val of_sort : sort -> t
-  val of_const : const -> t
+  val of_sort : creation:concrete_layout_reason -> sort -> t
+  val of_const : creation:creation_reason -> const -> t
 
   (** Find a layout in attributes.  Returns error if a disallowed layout is
       present, but always allows immediate attributes if ~legacy_immediate is
       true.  See comment on [Builtin_attributes.layout].  *)
   val of_attributes :
-    legacy_immediate:bool -> reason:annotation_location -> Parsetree.attributes ->
+    legacy_immediate:bool -> reason:annotation_context -> Parsetree.attributes ->
     (t option, Location.t * const) result
 
   (** Find a layout in attributes, defaulting to ~default.  Returns error if a
       disallowed layout is present, but always allows immediate if
       ~legacy_immediate is true.  See comment on [Builtin_attributes.layout]. *)
   val of_attributes_default :
-    legacy_immediate:bool -> reason:annotation_location ->
+    legacy_immediate:bool -> reason:annotation_context ->
     default:t -> Parsetree.attributes ->
     (t, Location.t * const) result
 
@@ -239,8 +278,6 @@ module Layout : sig
       yet been determined. *)
   val get : t -> desc
 
-  val of_desc : desc -> t
-
   (** Returns the sort corresponding to the layout.  Call only on representable
       layouts - raises on Any. *)
   val sort_of_layout : t -> sort
@@ -250,9 +287,15 @@ module Layout : sig
 
   val to_string : t -> string
   val format : Format.formatter -> t -> unit
+
+  (** XXX layouts RAE: document *)
   val format_history :
-    pp_name:(Format.formatter -> 'a -> unit) -> name:'a ->
+    intro:(Format.formatter -> unit) ->
     Format.formatter -> t -> unit
+
+  (** Provides the [Printtyp.path] formatter back up the dependency chain to
+      this module. *)
+  val set_printtyp_path : (Format.formatter -> Path.t -> unit) -> unit
 
   (******************************)
   (* relations *)
@@ -268,30 +311,35 @@ module Layout : sig
       when there is no need for unification; e.g. [equal] on a var and [value]
       will crash.
 
-      This function ignores the [missing_cmi_for] medatadata for [any]s.
-
-      CR layouts v2: At the moment, this is actually the same as [equate]! Fix. *)
+      CR layouts (v1.5): At the moment, this is actually the same as [equate]! *)
   val equal : t -> t -> bool
 
   (** Finds the intersection of two layouts, constraining sort variables to
-      create one if needed, or returns a [Violation.violation] if an
-      intersection does not exist.  Can update the layouts.  The returned
-      layout's history consists of the provided reason followed by the history
-      of the first layout argument.  That is, due to histories, this function is
-      asymmetric; it should be thought of as modifying the first layout to be
-      the intersection of the two, not something that modifies the second
-      layout. *)
+      create one if needed, or returns a [Violation.t] if an intersection does
+      not exist.  Can update the layouts.  The returned layout's history
+      consists of the provided reason followed by the history of the first
+      layout argument.  That is, due to histories, this function is asymmetric;
+      it should be thought of as modifying the first layout to be the
+      intersection of the two, not something that modifies the second layout. *)
   val intersection :
-    reason:reason -> t -> t -> (t, Violation.violation) Result.t
+    reason:intersection_reason -> t -> t -> (t, Violation.t) Result.t
 
   (** [sub t1 t2] returns [Ok t1] iff [t1] is a sublayout of
-    of [t2].  The current hierarchy is:
+    of [t2]. [t1]'s history will be updated to record the sublayout
+    check. The current hierarchy is:
 
     Any > Sort Value > Immediate64 > Immediate
     Any > Sort Void
 
     Returns [Error _] if the coercion is not possible. *)
-  val sub : t -> t -> (unit, Violation.violation) result
+  val sub : t -> t -> (t, Violation.t) result
+
+  (** Checks to see whether a layout is void. Call only after type-checking
+      is complete (no sort variables allowed here!). *)
+  val is_void : t -> bool
+
+  (** Checks to see whether a layout is any. Never does any mutation. *)
+  val is_any : t -> bool
 
   (*********************************)
   (* defaulting *)

@@ -109,8 +109,8 @@ let dbg = false
 (* CR layouts v2: When we're ready to allow non-values, these can be deleted or
    changed to check for void. *)
 let layout_must_be_value loc layout =
-  match Layout.(sub layout value) with
-  | Ok () -> ()
+  match Layout.(sub layout (value ~creation:V1_safety_check)) with
+  | Ok _ -> ()
   | Error e -> raise (Error (loc, Non_value_layout e))
 
 (*

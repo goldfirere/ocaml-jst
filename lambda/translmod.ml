@@ -47,9 +47,10 @@ exception Error of Location.t * error
    `Tstr_eval`, where we want to allow `any` in particular.  Remove when we
    remove the safety check. *)
 let layout_must_not_be_void loc ty layout =
-  match Layout.(sub layout void) with
-  | Ok () ->
-    let violation = Layout.(Violation.not_a_sublayout layout value) in
+  match Layout.(sub layout (void ~creation:V1_safety_check)) with
+  | Ok _ ->
+    let violation = Layout.(Violation.Not_a_sublayout
+                              (layout, value ~creation:V1_safety_check)) in
     raise (Error (loc, Non_value_layout (ty, violation)))
   | Error _ -> ()
 
