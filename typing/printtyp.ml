@@ -2457,7 +2457,7 @@ let explanation (type variety) intro prev env
       let fmt_history t =
         Layout.format_history ~intro:(fun ppf -> type_expr ppf t)
       in
-      Some (dprintf "@ because their layouts are different.@;@[<v>%a%a@]"
+      Some (dprintf "@ because their layouts are different.@[<v>%a%a@]"
               (fmt_history t1) l1 (fmt_history t2) l2)
 
 let mismatch intro env trace =

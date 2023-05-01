@@ -63,11 +63,11 @@ type error =
   | Multiple_native_repr_attributes
   | Cannot_unbox_or_untag_type of native_repr_kind
   | Deep_unbox_or_untag_attribute of native_repr_kind
-  | Layout of Layout.Violation.violation
+  | Layout of Layout.Violation.t
   | Layout_sort of
       { lloc : layout_sort_loc
       ; typ : type_expr
-      ; err : Layout.Violation.violation
+      ; err : Layout.Violation.t
       }
   | Layout_empty_record
   | Separability of Typedecl_separability.error

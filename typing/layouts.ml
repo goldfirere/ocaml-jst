@@ -263,7 +263,7 @@ module Layout = struct
     | Concrete_creation of concrete_layout_reason
 
   type internal =
-    | Any of { missing_cmi_for : Path.t option }
+    | Any
     | Sort of sort
     | Immediate64
     (** We know for sure that values of types of this layout are always immediate
@@ -289,8 +289,6 @@ module Layout = struct
                    ; rhs_layout : internal
                    ; rhs_history : history
                    }
-    | Missing_cmi of { missing_cmi_for : Path.t
-                     ; history : history }
     | Creation of creation_reason
 
   type t =
@@ -432,6 +430,50 @@ module Layout = struct
 
   let printtyp_path = ref (fun _ _ -> assert false)
   let set_printtyp_path f = printtyp_path := f
+
+  module Report_missing_cmi : sig
+    (* used both in format_history and in Violation.report_general *)
+    val report_missing_cmi : Format.formatter -> Path.t option -> unit
+  end = struct
+    open Format
+
+    (* CR layouts: Remove this horrible (but useful) heuristic once we have
+       transitive dependencies in jenga. *)
+    let missing_cmi_hint ppf type_path =
+      let root_module_name p = p |> Path.head |> Ident.name in
+      let delete_trailing_double_underscore s =
+        if Misc.Stdlib.String.ends_with ~suffix:"__" s
+        then String.sub s 0 (String.length s - 2)
+        else s
+      in
+      (* A heuristic for guessing at a plausible library name for an identifier
+         with a missing .cmi file; definitely less likely to be right outside of
+         Jane Street. *)
+      let guess_library_name : Path.t -> string option = function
+        | Pdot _ as p -> Some begin
+            match root_module_name p with
+            | "Location" | "Longident" -> "ocamlcommon"
+            | mn -> mn
+                    |> String.lowercase_ascii
+                    |> delete_trailing_double_underscore
+          end
+        | Pident _ | Papply _ ->
+            None
+      in
+      Option.iter
+        (fprintf ppf "@,Hint: Adding \"%s\" to your dependencies might help.")
+        (guess_library_name type_path)
+        (* XXX layouts RAE: move this output after the "But" line in
+           typing-missing-cmi-2/test.ml *)
+
+    let report_missing_cmi ppf = function
+      | Some p ->
+        fprintf ppf "@,No .cmi file found containing %a." !printtyp_path p;
+        missing_cmi_hint ppf p
+      | None -> ()
+  end
+
+  include Report_missing_cmi
 
   (* This module is just to keep all the helper functions more locally
      scoped. *)
@@ -589,35 +631,6 @@ module Layout = struct
       | Tyvar_refinement ->
         fprintf ppf "updating a type variable"
 
-    (* CR layouts: Remove this horrible (but useful) heuristic once we have
-       transitive dependencies in jenga. *)
-    let missing_cmi_hint ppf type_path =
-      let root_module_name p = p |> Path.head |> Ident.name in
-      let delete_trailing_double_underscore s =
-        if Misc.Stdlib.String.ends_with ~suffix:"__" s
-        then String.sub s 0 (String.length s - 2)
-        else s
-      in
-      (* A heuristic for guessing at a plausible library name for an identifier
-         with a missing .cmi file; definitely less likely to be right outside of
-         Jane Street. *)
-      let guess_library_name : Path.t -> string option = function
-        | Pdot _ as p -> Some begin
-            match root_module_name p with
-            | "Location" | "Longident" -> "ocamlcommon"
-            | mn -> mn
-                    |> String.lowercase_ascii
-                    |> delete_trailing_double_underscore
-          end
-        | Pident _ | Papply _ ->
-            None
-      in
-      Option.iter
-        (fprintf ppf "@,Hint: Adding \"%s\" to your dependencies might help.")
-        (guess_library_name type_path)
-        (* XXX layouts RAE: move this output after the "But" line in
-           typing-missing-cmi-2/test.ml *)
-
     (* CR layouts: should this be configurable? In the meantime, you
        may want to change these to experiment / debug. *)
 
@@ -684,8 +697,6 @@ module Layout = struct
           let fh1 = history acc lhs_layout lhs_history in
           let fh2 = history fh1 rhs_layout rhs_history in
           fh2
-        | Missing_cmi { missing_cmi_for = _; history = h } ->
-          history acc internal h
         | Creation reason ->
           add internal reason acc
       in
@@ -718,10 +729,6 @@ module Layout = struct
             ~lhs_history ~rhs_history
         | Sublayout { lhs_history; rhs_history } ->
           show_histories ppf "sublayout" ~lhs_history ~rhs_history
-        | Missing_cmi { missing_cmi_for; history } ->
-          fprintf ppf "missing .cmi file for %a@ @[<v 2>  %a@]"
-            !printtyp_path missing_cmi_for
-            in_order history
         | Creation c ->
           format_creation_reason ppf c
       and show_histories ppf node ~lhs_history ~rhs_history =
@@ -739,7 +746,9 @@ module Layout = struct
         if flattened_histories
         then format_flattened_history ~intro ppf t
         else format_history_tree ~intro ppf t
-      end;
+      end
+      (* XXX layouts: remove this!
+         ;
       (* always print the missing-cmi stuff *)
       let rec check_missing_cmi = function
         | Intersection { lhs_history; rhs_history }
@@ -747,16 +756,10 @@ module Layout = struct
           Misc.Stdlib.Option.first_some
             (check_missing_cmi lhs_history)
             (fun () -> check_missing_cmi rhs_history)
-        | Missing_cmi { missing_cmi_for; _ } -> Some missing_cmi_for
         | Creation (Any_creation (Missing_cmi p)) -> Some p
         | Creation _ -> None
       in
-      match check_missing_cmi t.history with
-      | Some p ->
-        if not display_histories  (* this is redundant with display_histories *)
-          then fprintf ppf "@,No .cmi file found containing %a." !printtyp_path p;
-        missing_cmi_hint ppf p
-      | None -> ()
+      report_missing_cmi ppf (check_missing_cmi t.history) *)
   end
 
   include Format_history
@@ -767,55 +770,38 @@ module Layout = struct
   module Violation = struct
     open Format
 
-    let printtyp_path = ref (fun _ _ -> assert false)
-
-    let set_printtyp_path f = printtyp_path := f
-
-    type message =
+    type nonrec t =
       | Not_a_sublayout of t * t
       | No_intersection of t * t
-
-    let add_missing_cmi_for_lhs ~missing_cmi_for =
-      let update ({ history } as lhs) =
-        { lhs with history = Missing_cmi { missing_cmi_for; history }}
-      in function
-      | Not_a_sublayout (lhs, rhs) -> Not_a_sublayout (update lhs, rhs)
-      | No_intersection (lhs, rhs) -> No_intersection (update lhs, rhs)
-
-    type problem =
-      | Is_not_representable
-      | Is_not_a_sublayout_of
-      | Does_not_overlap_with
-
-    let message = function
-      | Is_not_representable -> "is not representable"
-      | Is_not_a_sublayout_of -> "is not a sublayout of"
-      | Does_not_overlap_with -> "does not overlap with"
-
-    let report_second = function
-      | Is_not_representable ->
-        fun _ _ -> ()
-      | Is_not_a_sublayout_of | Does_not_overlap_with ->
-        fun ppf layout -> fprintf ppf " %a" format layout
+      | Missing_cmi of Path.t * t * t
 
     let report_general preamble pp_former former ppf t =
-      let l1, problem, l2 = match t with
-        | Not_a_sublayout(l1, l2) ->
-            l1,
-            (match get l2 with
-               | Var _ -> Is_not_representable
-               | Const _ -> Is_not_a_sublayout_of),
-            l2
-        | No_intersection(l1, l2) -> l1, Does_not_overlap_with, l2
+      let sublayout_format verb l2 = match get l2 with
+        | Var _ -> dprintf "%s representable" verb
+        | Const _ -> dprintf "%s a sublayout of %a" verb format l2
       in
-      fprintf ppf "@[<v>@[<hov 2>%s%a has layout %a,@ which %s%a.@]%a%a@]"
+      let l1, l2, fmt_l1, fmt_l2, missing_cmi_option = match t with
+        | Not_a_sublayout(l1, l2) ->
+          l1, l2,
+          dprintf "layout %a" format l1,
+          sublayout_format "is not" l2, None
+        | No_intersection(l1, l2) ->
+          l1, l2,
+          dprintf "layout %a" format l1,
+          dprintf "does not overlap with %a" format l2, None
+        | Missing_cmi(p, l1, l2) ->
+          l1, l2,
+          dprintf "an unknown layout",
+          sublayout_format "might not be" l2, Some p
+      in
+      fprintf ppf "@[<v>@[<hov 2>%s%a has %t,@ which %t.@]%a%a@]"
         preamble
         pp_former former
-        format l1
-        (message problem)
-        (report_second problem) l2
+        fmt_l1
+        fmt_l2
         (format_history ~intro:(dprintf "The layout of %a is" pp_former former)) l1
-        (format_history ~intro:(dprintf "But the layout of %a is required to be" pp_former former)) l2
+        (format_history ~intro:(dprintf "But the layout of %a is required to be" pp_former former)) l2;
+      report_missing_cmi ppf missing_cmi_option
 
     let pp_t ppf x = fprintf ppf "%t" x
 
@@ -834,7 +820,7 @@ module Layout = struct
 
   let equate_or_equal ~allow_mutation (l1 : t) (l2 : t) =
     match l1.layout, l2.layout with
-    | Any _, Any _ -> true
+    | Any, Any -> true
     | Immediate64, Immediate64 -> true
     | Immediate, Immediate -> true
     | Sort s1, Sort s2 -> begin
@@ -846,7 +832,7 @@ module Layout = struct
         | Unequal -> false
         | Equal_no_mutation | Equal_mutated_first | Equal_mutated_second -> true
       end
-    | (Any _ | Immediate64 | Immediate | Sort _), _ -> false
+    | (Any | Immediate64 | Immediate | Sort _), _ -> false
 
   (* CR layouts v2: Switch this back to ~allow_mutation:false *)
   let equal = equate_or_equal ~allow_mutation:true
@@ -854,7 +840,7 @@ module Layout = struct
   let equate = equate_or_equal ~allow_mutation:true
 
   let intersection ~reason l1 l2 =
-    let err = Error (Violation.no_intersection l1 l2) in
+    let err = Error (Violation.No_intersection (l1, l2)) in
     let equality_check is_eq l = if is_eq then Ok l else err in
     (* it's OK not to cache the result of [get], because [get] does path
        compression *)
@@ -935,7 +921,6 @@ module Layout = struct
     | Var _ -> assert false
 
   let constrain_default_value = get_defaulting ~default:Sort.Value
-  let is_void l = Void = constrain_default_value l
   let default_to_value t =
     ignore (get_defaulting ~default:Value t)
 
@@ -946,9 +931,7 @@ module Layout = struct
     open Format
 
     let internal ppf : internal -> unit = function
-      | Any { missing_cmi_for } ->
-          fprintf ppf "Any { missing_cmi_for = %a }"
-            (Misc.Stdlib.Option.print Path.print) missing_cmi_for
+      | Any -> fprintf ppf "Any"
       | Sort s -> fprintf ppf "Sort %a" Sort.Debug_printers.t s
       | Immediate64 -> fprintf ppf "Immediate64"
       | Immediate -> fprintf ppf "Immediate"
@@ -1090,11 +1073,6 @@ module Layout = struct
           history lhs_history
           internal rhs_layout
           history rhs_history
-      | Missing_cmi { missing_cmi_for; history = h } ->
-        fprintf ppf "Missing_cmi {@[missing_cmi_for = %a;@ \
-                     history = %a}@]"
-          Path.print missing_cmi_for
-          history h
       | Creation c ->
         fprintf ppf "Creation (%a)"
           creation_reason c

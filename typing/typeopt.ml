@@ -26,7 +26,7 @@ open Lambda
    the void sanity check.  When we're ready to take that out, remove the errors
    stuff. *)
 type error =
-    Non_value_layout of type_expr * Layout.Violation.violation
+    Non_value_layout of type_expr * Layout.Violation.t
 
 exception Error of Location.t * error
 
@@ -263,11 +263,10 @@ let rec value_kind env ~loc ~visited ~depth ~num_nodes_visited ty
                  (correct_levels ty) (Layout.value ~creation:V1_safety_check))
       with
       | Ok _ -> ()
-      | Error e ->
-        if e.missing_cmi then
-          () (* CR layouts v1.5: stop allowing missing cmis *)
-        else
-          raise (Error (loc, Non_value_layout (ty, e)))
+      | Error (Missing_cmi _) -> ()
+      (* CR layouts v1.5: stop allowing missing cmis *)
+      | Error e -> raise (Error (loc, Non_value_layout (ty, e)))
+
   end;
   match get_desc scty with
   | Tconstr(p, _, _) when Path.same p Predef.path_int ->

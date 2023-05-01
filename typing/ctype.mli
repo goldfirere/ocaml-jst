@@ -303,7 +303,7 @@ type filter_method_failure =
   | Unification_error of Errortrace.unification_error
   | Not_a_method
   | Not_an_object of type_expr
-  | Not_a_value of Layout.Violation.violation
+  | Not_a_value of Layout.Violation.t
 
 exception Filter_method_failed of filter_method_failure
 
@@ -484,7 +484,7 @@ val type_layout : Env.t -> type_expr -> layout
    needed) *)
 val type_sort :
   reason:Layouts.Layout.concrete_layout_reason ->
-  Env.t -> type_expr -> (sort, Layout.Violation.violation) result
+  Env.t -> type_expr -> (sort, Layout.Violation.t) result
 
 (* Layout checking. [constrain_type_layout] will update the layout of type
    variables to make the check true, if possible.  [check_decl_layout] and

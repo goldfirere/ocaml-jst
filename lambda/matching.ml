@@ -100,7 +100,7 @@ open Printpat
 module Scoped_location = Debuginfo.Scoped_location
 
 type error =
-    Non_value_layout of Layout.Violation.violation
+    Non_value_layout of Layout.Violation.t
 
 exception Error of Location.t * error
 

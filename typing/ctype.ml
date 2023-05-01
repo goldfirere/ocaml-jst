@@ -2010,9 +2010,11 @@ let rec constrain_type_layout ~fixed env ty layout fuel =
         | Unboxed ty ->
             constrain_type_layout ~fixed env ty layout (fuel - 1)
         | Missing missing_cmi_for ->
-            Error (Layout.Violation.add_missing_cmi_for_lhs
-                     ~missing_cmi_for
-                     violation)
+          begin match violation with
+          | Not_a_sublayout (lay1, lay2) ->
+            Error (Layout.Violation.Missing_cmi (missing_cmi_for, lay1, lay2))
+          | No_intersection _ | Missing_cmi _ -> assert false
+          end
         end
     end
   | Tpoly (ty, _) -> constrain_type_layout ~fixed env ty layout fuel
@@ -2086,8 +2088,9 @@ let unification_layout_check env ty layout =
 
 let is_always_global env ty =
   let perform_check () =
-    Result.is_ok (check_type_layout ~reason:Dummy_reason_result_ignored
-                    env ty (Layout.immediate64 ~creation:Local_mode_cross_check)
+    Result.is_ok (check_type_layout
+                    env ty
+                    (Layout.immediate64 ~creation:Local_mode_cross_check))
   in
   if !Clflags.principal || Env.has_local_constraints env then
     (* We snapshot to keep this pure; see the mode crossing test that mentions
@@ -3829,7 +3832,7 @@ type filter_method_failure =
   | Unification_error of unification_error
   | Not_a_method
   | Not_an_object of type_expr
-  | Not_a_value of Layout.Violation.violation
+  | Not_a_value of Layout.Violation.t
 
 exception Filter_method_failed of filter_method_failure
 

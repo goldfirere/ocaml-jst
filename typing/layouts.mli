@@ -175,9 +175,13 @@ module Layout : sig
                           but that's loopy *)
 
   module Violation : sig
-    type message =
+    type nonrec t =
       | Not_a_sublayout of t * t
       | No_intersection of t * t
+      | Missing_cmi of Path.t * t * t
+        (* means: we can't prove that lay1 is a sublayout of lay2 because
+           lay1's cmi is missing *)
+
 
     (* CR layouts: The [offender] arguments below are always
        [Printtyp.type_expr], so we should either stash that in a ref (like with
@@ -191,23 +195,17 @@ module Layout : sig
         ([offender], which you supply an arbitrary printer for). *)
     val report_with_offender :
       offender:(Format.formatter -> unit) ->
-      Format.formatter -> violation -> unit
+      Format.formatter -> t -> unit
 
     (** Like [report_with_offender], but additionally prints that the issue is
         that a representable layout was expected. *)
     val report_with_offender_sort :
       offender:(Format.formatter -> unit) ->
-      Format.formatter -> violation -> unit
+      Format.formatter -> t -> unit
 
     (** Simpler version of [report_with_offender] for when the thing that had an
         unexpected layout is available as a string. *)
     val report_with_name : name:string -> Format.formatter -> t -> unit
-
-    (** If we later discover that the left-hand layout was from a missing .cmi
-        file, this function will update that layout
-        to report what missing type caused that
-        . *)
-    val add_missing_cmi_for_lhs : missing_cmi_for:Path.t -> t -> t
   end
 
   (******************************)
@@ -335,8 +333,11 @@ module Layout : sig
   val sub : t -> t -> (t, Violation.t) result
 
   (** Checks to see whether a layout is void. Call only after type-checking
-      is complete (no sort variables allowed here!). *)
+      is complete (no unfilled sort variables allowed here!). *)
   val is_void : t -> bool
+  (* CR layouts v5: When we have proper support for void, we'll want to change
+     things to default to void - it's the most efficient thing when we have a
+     choice. *)
 
   (** Checks to see whether a layout is any. Never does any mutation. *)
   val is_any : t -> bool
@@ -344,10 +345,6 @@ module Layout : sig
   (*********************************)
   (* defaulting *)
   val constrain_default_value : t -> const
-  val is_void : t -> bool
-  (* CR layouts v5: When we have proper support for void, we'll want to change
-     things to default to void - it's the most efficient thing when we have a
-     choice. *)
 
   val default_to_value : t -> unit
 
